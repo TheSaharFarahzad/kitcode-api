@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/4.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
-
+import os
 import environ
 from pathlib import Path
 
@@ -18,19 +18,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Initialise environment variables
 env = environ.Env()
-environ.Env.read_env()  # Reads the .env file
+environ.Env.read_env(os.path.join(os.getcwd(), '.env'))
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env(
-    "SECRET_KEY",
-    default='django-insecure-1+i2^)0o8!a5@dktrxemw+1t#q)=b1@w3ak5itn43fna1#p&^z',
-)
+SECRET_KEY = env("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env.bool('DEBUG', default=True)
+DEBUG = env.bool('DEBUG')
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["127.0.0.1", "localhost"])
 
 
 # Application definition
