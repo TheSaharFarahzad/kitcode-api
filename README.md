@@ -72,7 +72,7 @@ source .venv/bin/activate
 To install all requirements for local development, run the following command:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements/local.txt
 ```
 
 To deactivate the virtual environment you just need to run the following commands:
