@@ -52,7 +52,7 @@ python -m venv venv
 Linux:
 ```bash
 cd kitcode
-python3 -m venv venv
+python3 -m venv .venv
 ```
 
 **NOTE**: Ensure you add your virtual environment directory to .gitignore to avoid committing unnecessary files to your repository.
