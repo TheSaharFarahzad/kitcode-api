@@ -20,13 +20,13 @@ git pull origin master
 
 ## 2. System Requirements
 
-You'll need Python 3, pip and PostgreSQL to be installed on your machine:
+You'll need Python 3, python3-pip, python3-venv and PostgreSQL to be installed on your machine:
 
 On Linux, via apt:
 
 ```bash
 sudo apt-get update
-sudo apt-get install python3 python3-pip postgresql
+sudo apt-get install python3 python3-pip python3-venv postgresql
 ```
 
 Install Python on Windows:
