@@ -20,13 +20,13 @@ git pull origin master
 
 ## 2. System Requirements
 
-You'll need Python 3, PostgreSQL to be installed on your machine:
+You'll need Python 3, python3-pip, python3-venv and PostgreSQL to be installed on your machine:
 
 On Linux, via apt:
 
 ```bash
 sudo apt-get update
-sudo apt-get install python3 python3-pip postgresql
+sudo apt-get install python3 python3-pip python3-venv postgresql
 ```
 
 Install Python on Windows:
@@ -85,9 +85,54 @@ To manage sensitive information like database credentials, create a `.env` file 
 
 ## 5. <a name='Setup'></a>Setup
 
-In this section we explain how you can set up the project.
+In this section we explain how you can set up the project with/without Docker.
 
-### 5.2.1 Python Environment
+### 5.1. <a name='SetupWithDocker'></a>With Docker
+
+You can run the application locally using Docker Compose. Ensure that both Docker and Docker Compose are installed on your machine.
+You can manage the containers with the following commands:
+
+```bash
+cd kitcode
+
+# Create and run the containers, building the images before starting.
+docker compose up --detach --build
+
+# List the running containers.
+docker-compose ps
+
+# List all containers, including stopped ones.
+docker-compose ps -a
+
+# Read the logs of the running containers.
+docker-compose logs
+
+# Stop the containers.
+docker-compose stop
+
+# Stop the containers for a single service, e.g., the database.
+docker-compose stop db
+
+# Start the containers.
+docker-compose start
+
+# Start the containers for a single service, e.g., the database.
+docker-compose start db
+
+# Stop and remove the containers, including any named volumes.
+# WARNING: This removes the volumes, so important data can be lost. Leave out `--volumes` if needed.
+docker-compose down --volumes
+
+# List all images created by Docker Compose.
+docker-compose images
+
+# Remove specific images by their image ID. Use -f to force removal.
+docker-compose rmi -f <image_id_1> <image_id_2>
+```
+
+### 5.2. <a name='SetupWithoutDocker'></a>Without Docker
+
+#### 5.2.1 Python Environment
 
 For maintaining a clean development environment, it's recommended to use a virtual environment for installing application-specific packages. There are various methods to create virtual environments, such as using Pipenv. Below is an example demonstrating how to set up a virtual environment using native tools:
 
@@ -130,7 +175,7 @@ deactivate
 ```
 
 
-### 5.2.2 Run Server
+#### 5.2.2 Run Server
 
 If you want to run the app locally, you need to execute the `migrate` command to create your database tables. Make sure you have set up your local database as described in the PostgreSQL section:
 
