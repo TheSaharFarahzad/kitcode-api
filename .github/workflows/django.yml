@@ -19,9 +19,9 @@ jobs:
       postgres:
         image: postgres:latest
         env:
-          POSTGRES_DB: ${DATABASE_NAME}
-          POSTGRES_USER: ${DATABASE_USER}
-          POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+          POSTGRES_DB: ${{ secrets.DATABASE_NAME }}
+          POSTGRES_USER: ${{ secrets.DATABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
@@ -58,6 +58,7 @@ jobs:
       - name: Run Tests
         env:
           DJANGO_SETTINGS_MODULE: kitcode.settings.base
+          DATABASE_USER: ${{ secrets.DATABASE_USER }}
         run: |
           python manage.py migrate
           pytest
