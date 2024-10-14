@@ -15,6 +15,21 @@ jobs:
       matrix:
         python-version: [3.12]
 
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_DB: ${DATABASE_NAME}
+          POSTGRES_USER: ${DATABASE_USER}
+          POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ${DATABASE_USER}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -43,4 +58,5 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: kitcode.settings.base
         run: |
+          python manage.py migrate
           pytest
