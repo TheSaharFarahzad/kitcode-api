@@ -26,5 +26,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements/base.txt
     - name: Run Tests
+      env:
+        DJANGO_SETTINGS_MODULE: kitcode.settings.base
       run: |
         pytest
