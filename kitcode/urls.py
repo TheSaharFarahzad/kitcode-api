@@ -15,7 +15,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 from .views import HelloWorldView
 from drf_spectacular.views import (
     SpectacularJSONAPIView,
@@ -35,4 +35,5 @@ urlpatterns = [
     path('hello/', HelloWorldView.as_view(), name='hello_world'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('dj-rest-auth/', include('dj_rest_auth.urls')),
 ]
