@@ -73,10 +73,16 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Kitcode API: Empowering Your Coding Journey",
-    "DESCRIPTION": "Welcome to Kitcode! Our backend API supports an engaging learning experience, guiding you through the world of coding, one lesson at a time.",
+    "DESCRIPTION": """
+    Welcome to Kitcode! Our backend API supports an engaging learning experience, guiding you through the world of coding, one lesson at a time.
+        
+    **Note**: To access endpoints that require authentication, please retrieve your access token from `/api/token/`. Then, click the "Authorize" button at the top right of the page and enter your token in the format `Bearer <your_access_token>`.
+    """,
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
 }
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 ROOT_URLCONF = 'kitcode.urls'
 
