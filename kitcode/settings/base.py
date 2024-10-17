@@ -82,6 +82,10 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
 }
 
+REST_AUTH = {
+    'SESSION_LOGIN': False,
+}
+
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 ROOT_URLCONF = 'kitcode.urls'
