@@ -15,26 +15,30 @@ class TestJWTAuthentication(APITestCase):
     PASSWORD = "testpassword"
 
     def setUp(self):
-        self.user = User.objects.create_user(username="normal_user", email="normal_user@test.com")
+        self.user = User.objects.create_user(
+            username="normal_user", email="normal_user@test.com"
+        )
         self.user.set_password(self.PASSWORD)
         self.user.save()
 
-        self.super_user = User.objects.create_user(username="super_user", email="super_user@test.com")
+        self.super_user = User.objects.create_user(
+            username="super_user", email="super_user@test.com"
+        )
         self.super_user.set_password(self.PASSWORD)
         self.super_user.is_superuser = True
         self.super_user.save()
 
         self.expired_token = jwt.encode(
             {
-                'user_id': self.user.id,
-                'exp': timezone.now() - timedelta(seconds=1),
+                "user_id": self.user.id,
+                "exp": timezone.now() - timedelta(seconds=1),
             },
             settings.SECRET_KEY,
-            algorithm='HS256'
+            algorithm="HS256",
         )
 
-        self.obtain_token_url = reverse('token_obtain_pair')
-        self.refresh_token_url = reverse('token_refresh')
+        self.obtain_token_url = reverse("token_obtain_pair")
+        self.refresh_token_url = reverse("token_refresh")
 
     def test_obtain_token_with_normal_user(self):
         data = {
@@ -79,7 +83,10 @@ class TestJWTAuthentication(APITestCase):
         }
         response = self.client.post(self.obtain_token_url, data=data)
         assert response.status_code == 401
-        assert response.data["detail"] == "No active account found with the given credentials"
+        assert (
+            response.data["detail"]
+            == "No active account found with the given credentials"
+        )
 
     @pytest.mark.skip(reason="After adding Django Rest Framework throttling")
     def test_limit_token_requests(self):
