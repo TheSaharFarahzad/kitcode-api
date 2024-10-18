@@ -17,7 +17,6 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.urls import re_path
-from .views import HelloWorldView
 from drf_spectacular.views import (
     SpectacularJSONAPIView,
     SpectacularSwaggerView,
@@ -34,7 +33,6 @@ urlpatterns = [
     path('api/schema/', SpectacularJSONAPIView.as_view(), name='schema'),
     path('api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
-    path('hello/', HelloWorldView.as_view(), name='hello_world'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('dj-rest-auth/', include('dj_rest_auth.urls')),
