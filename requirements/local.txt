@@ -1,1 +1,6 @@
 -r ./base.txt
+
+# Formatting
+# ------------------------------------------------------------------------------
+black  # https://black.readthedocs.io/en/stable/
+flake8  # https://flake8.pycqa.org/en/latest/
