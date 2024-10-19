@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 class APIVersionViewTests(APITestCase):
 
     def setUp(self):
-        self.api_version_url = reverse("api-version")
+        self.api_version_url = reverse("api_version")
 
     def test_api_version_url_resolves_correctly(self):
         """Test that the API version URL resolves correctly."""
