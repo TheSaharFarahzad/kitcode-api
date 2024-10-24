@@ -1,5 +1,5 @@
+from django.conf import settings
 from django.db import models
-from django.contrib.auth.models import User
 
 
 class Course(models.Model):
@@ -8,7 +8,12 @@ class Course(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     instructor = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="courses"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="instructor_courses",
+    )
+    students = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, related_name="enrolled_courses", blank=True
     )
 
     def __str__(self):
