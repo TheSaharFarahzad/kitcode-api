@@ -50,7 +50,11 @@ INSTALLED_APPS = [
     "allauth.account",
     "dj_rest_auth.registration",
     "courses",
+    "users",
 ]
+
+# Custom user model
+AUTH_USER_MODEL = "users.User"
 
 SITE_ID = 1
 
