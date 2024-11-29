@@ -1,25 +1,34 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.admin import UserAdmin
 from .models import User
+from django.utils.translation import gettext_lazy as _
+from courses.models import UserRole, Course
 
 
-class UserAdmin(BaseUserAdmin):
-    model = User
+class CustomUserAdmin(UserAdmin):
+    # Specify the fields to display in the admin list view
     list_display = (
         "username",
+        "first_name",
+        "last_name",
         "email",
-        "is_student",
-        "is_instructor",
+        "bio",
+        "date_joined",
         "is_active",
-        "is_staff",
-        "last_login",
     )
-    list_filter = ("is_student", "is_instructor", "is_active", "is_staff")
+    list_filter = ("is_active", "is_staff", "is_superuser")
+    search_fields = ("username", "email", "first_name", "last_name")
+    ordering = ("-date_joined",)
+
+    # Specify the fields for the user detail page
     fieldsets = (
         (None, {"fields": ("username", "password")}),
-        ("Personal info", {"fields": ("first_name", "last_name", "email")}),
         (
-            "Permissions",
+            _("Personal info"),
+            {"fields": ("first_name", "last_name", "email", "bio", "picture")},
+        ),
+        (
+            _("Permissions"),
             {
                 "fields": (
                     "is_active",
@@ -30,9 +39,9 @@ class UserAdmin(BaseUserAdmin):
                 )
             },
         ),
-        ("User type", {"fields": ("is_student", "is_instructor")}),
-        ("Important dates", {"fields": ("last_login",)}),
+        (_("Important dates"), {"fields": ("last_login", "date_joined")}),
     )
+
     add_fieldsets = (
         (
             None,
@@ -40,20 +49,33 @@ class UserAdmin(BaseUserAdmin):
                 "classes": ("wide",),
                 "fields": (
                     "username",
-                    "email",
                     "password1",
                     "password2",
-                    "is_student",
-                    "is_instructor",
-                    "is_active",
-                    "is_staff",
+                    "first_name",
+                    "last_name",
+                    "email",
+                    "bio",
+                    "picture",
                 ),
             },
         ),
     )
-    search_fields = ("username", "email", "first_name", "last_name")
-    ordering = ("username",)
+
+    # Custom method to display roles in courses
+    def roles_in_courses(self, obj):
+        # Get all the roles for the user
+        user_roles = UserRole.objects.filter(user=obj)
+        # If user has roles in courses, display them
+        if user_roles:
+            course_roles = [f"{role.course.title} - {role.role}" for role in user_roles]
+            return ", ".join(course_roles)
+        return "No roles"
+
+    roles_in_courses.short_description = "Roles in Courses"
+
+    # Add the custom field to the user list page
+    list_display += ("roles_in_courses",)
 
 
-# Register the User model with the custom UserAdmin
-admin.site.register(User, UserAdmin)
+# Register the custom user admin interface
+admin.site.register(User, CustomUserAdmin)
