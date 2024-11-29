@@ -26,16 +26,15 @@ def api_client():
     return APIClient()
 
 
-# @pytest.fixture
-# def create_user(django_user_model):
+@pytest.fixture
+def create_user(django_user_model):
 
+    def _create_user(username, email, password):
+        return django_user_model.objects.create_user(
+            username=username, email=email, password=password
+        )
 
-#     def _create_user(username, email, password):
-#         return django_user_model.objects.create_user(
-#             username=username, email=email, password=password
-#         )
-
-#     return _create_user
+    return _create_user
 
 
 @pytest.fixture
@@ -835,127 +834,121 @@ def test_password_reset(
         mock_email_send.assert_not_called()
 
 
-# @pytest.mark.django_db
-# @patch("accounts.email.send_email")
-# def test_password_reset_email(mock_send_email, api_client, create_user):
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "uid_modifier, token_modifier, new_password1, new_password2, expected_status, expected_detail",
+    [
+        # Valid inputs
+        (
+            "valid_uid",
+            "valid_token",
+            "newpassword123",
+            "newpassword123",
+            200,
+            "Password has been reset with the new password.",
+        ),
+        # Invalid UID
+        (
+            "invalid_uid",
+            "valid_token",
+            "newpassword123",
+            "newpassword123",
+            400,
+            {"uid": ["Invalid value"]},
+        ),
+        # Invalid Token
+        (
+            "valid_uid",
+            "invalid_token",
+            "newpassword123",
+            "newpassword123",
+            400,
+            {"token": ["Invalid value"]},
+        ),
+        # Mismatched Passwords
+        (
+            "valid_uid",
+            "valid_token",
+            "newpassword123",
+            "differentpassword",
+            400,
+            {"new_password2": ["The two password fields didn’t match."]},
+        ),
+        # Missing UID
+        (
+            None,
+            "valid_token",
+            "newpassword123",
+            "newpassword123",
+            400,
+            {"uid": ["This field is required."]},
+        ),
+        # Missing Token
+        (
+            "valid_uid",
+            None,
+            "newpassword123",
+            "newpassword123",
+            400,
+            {"token": ["This field is required."]},
+        ),
+        # Missing Passwords
+        (
+            "valid_uid",
+            "valid_token",
+            None,
+            None,
+            400,
+            {
+                "new_password1": ["This field is required."],
+                "new_password2": ["This field is required."],
+            },
+        ),
+    ],
+)
+def test_password_reset_confirm(
+    api_client,
+    create_user,
+    uid_modifier,
+    token_modifier,
+    new_password1,
+    new_password2,
+    expected_status,
+    expected_detail,
+):
+    # Step 1: Create a user
+    user = create_user(email="normal_user@test.com", password="oldpassword123")
 
-#     user = create_user(email="test@example.com", password="oldpassword123")
-#     url = reverse("password-reset")
-#     response = api_client.post(url, {"email": user.email})
-#     assert response.status_code == 200
-#     assert "Password reset email sent." in response.data.get("message", "")
+    # Step 2: Request password reset email
+    reset_url = reverse("rest_password_reset")
+    response = api_client.post(reset_url, data={"email": user.email})
+    assert response.status_code == 200
 
-#     # Simulate valid UID and token (mocked for the test)
-#     uidb64 = urlsafe_base64_encode(force_bytes(user.pk))  # Mocked UID encoding
-#     token = "valid-token"  # This should be a valid token generated in your app
+    # Step 3: Extract valid UID and token
+    email_body = mail.outbox[0].body
+    url_segment = email_body.split("password-reset/confirm/")[1]
+    valid_uid, valid_token = url_segment.split("/")[:2]
 
-#     # Prepare the data for the request
-#     data = {
-#         "new_password": "newpassword123",
-#         "confirm_password": "newpassword123",
-#         "uidb64": uidb64,
-#         "token": token,
-#     }
+    # Step 4: Modify UID and Token based on test parameters
+    uid = valid_uid if uid_modifier == "valid_uid" else uid_modifier
+    token = valid_token if token_modifier == "valid_token" else token_modifier
 
-#     # Call the password reset confirm view
-#     url = reverse("password-reset-confirm", kwargs={"uidb64": uidb64, "token": token})
-#     response = api_client.post(url, data)
+    # Step 5: Prepare the payload
+    payload = {
+        "uid": uid,
+        "token": token,
+        "new_password1": new_password1,
+        "new_password2": new_password2,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None}  # Remove None values
 
-#     # Assert: Check if the response is correct and send_email was called
-#     assert response.status_code == 200
-#     assert "Password reset successful." in response.data.get("message", response.data)
+    # Step 6: Confirm password reset
+    confirm_url = reverse("rest_password_reset_confirm")
+    response = api_client.post(confirm_url, data=payload)
 
-
-# @pytest.mark.django_db
-# @pytest.mark.parametrize(
-#     "new_password, confirm_password, expected_status, error_field, expected_message",
-#     [
-#         # Valid password reset
-#         (
-#             "newpassword123",
-#             "newpassword123",
-#             200,
-#             "message",
-#             "Password reset successful.",
-#         ),
-#         # Passwords do not match
-#         (
-#             "newpassword123",
-#             "differentpassword123",
-#             400,
-#             "password",
-#             "Passwords must match.",
-#         ),
-#         # New password is too short
-#         (
-#             "short",
-#             "short",
-#             400,
-#             "new_password",
-#             "Password must be at least 8 characters long.",
-#         ),
-#         # New password is same as old password
-#         (
-#             "oldpassword123",
-#             "oldpassword123",
-#             400,
-#             "new_password",
-#             "New password cannot be the same as the old one.",
-#         ),
-#         # Missing required fields
-#         (
-#             "",
-#             "",
-#             400,
-#             "new_password",
-#             "This field may not be blank.",
-#         ),
-#     ],
-# )
-# @patch("accounts.email.send_email")
-# def test_password_reset_confirm(
-#     mock_send_email,
-#     api_client,
-#     create_user,
-#     new_password,
-#     confirm_password,
-#     expected_status,
-#     error_field,
-#     expected_message,
-# ):
-#     # Create a valid user for testing
-#     user = create_user(email="test@example.com", password="oldpassword123")
-
-#     # Simulate valid UID and token (mocked for the test)
-#     uidb64 = urlsafe_base64_encode(force_bytes(user.pk))  # Mocked UID encoding
-#     token = "valid-token"  # This should be a valid token generated in your app
-
-#     # Prepare the data for the request
-#     data = {
-#         "new_password": new_password,
-#         "confirm_password": confirm_password,
-#         "uidb64": uidb64,
-#         "token": token,
-#     }
-
-#     # Call the password reset confirm view
-#     url = reverse("password-reset-confirm", kwargs={"uidb64": uidb64, "token": token})
-#     response = api_client.post(url, data)
-
-#     # Assert the response status code
-#     assert response.status_code == expected_status
-
-#     # For error status codes, check for error message in the specified error field
-#     if expected_status == 400:
-#         # Get the error details from the response
-#         error_field_data = response.data.get(error_field)
-
-#         # If the error is a dictionary (nested error structure), get the specific error message
-#         if isinstance(error_field_data, dict):
-#             # Check if the error is inside the nested dictionary under the same error field
-#             error_field_data = error_field_data.get(error_field, "")
-
-#         assert expected_message in str(error_field_data)
-#     else:
-#         # For successful responses, check the message in the response
-#         assert expected_message in response.data.get(error_field, response.data)
+    # Step 7: Assert the response
+    assert response.status_code == expected_status
+    if isinstance(expected_detail, dict):
+        assert response.data == expected_detail
+    else:
+        assert response.data.get("detail") == expected_detail
