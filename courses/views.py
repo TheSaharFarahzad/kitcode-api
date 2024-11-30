@@ -1,12 +1,15 @@
 from rest_framework import viewsets
-from .models import Course, Lesson
+from rest_framework.permissions import IsAuthenticated
+from .models import Course, Lesson, UserRole
 from .serializers import CourseSerializer, LessonSerializer
 from users.permissions import (
     IsInstructorOrReadOnly,
-    IsInstructor,
-    IsStudent,
-    IsAuthenticatedUser,
+    IsEnrolledStudent,
+    IsAnonymousOrAuthenticated,
 )
+from django.db.models import Q
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 
 class CourseViewSet(viewsets.ModelViewSet):
@@ -14,29 +17,41 @@ class CourseViewSet(viewsets.ModelViewSet):
     serializer_class = CourseSerializer
     permission_classes = [IsInstructorOrReadOnly]
 
+    @action(detail=True, methods=["post"])
+    def enroll(self, request, pk=None):
+        """
+        Enroll the authenticated user as a student in the course.
+        """
+        course = self.get_object()
+        course.enroll_student(request.user)
+        return Response({"status": "enrolled"})
+
     def get_queryset(self):
-        return self.queryset
+        """
+        Limit the courses returned based on user role.
+        """
+        user = self.request.user
+        if user.is_authenticated:
+            # Show courses the user created or all published courses
+            return Course.objects.filter(
+                Q(is_published=True) | Q(created_by=user)
+            ).distinct()
+        # For unauthenticated users, show only published courses
+        return Course.objects.filter(is_published=True)
 
 
 class LessonViewSet(viewsets.ModelViewSet):
     queryset = Lesson.objects.all()
     serializer_class = LessonSerializer
-    permission_classes = [IsAuthenticatedUser | IsStudent | IsInstructor]
+    permission_classes = [IsAuthenticated, IsEnrolledStudent, IsInstructorOrReadOnly]
 
     def get_queryset(self):
-        user = self.request.user
+        """
+        Return lessons for a specific course.
+        """
+        course_pk = self.kwargs["course_pk"]
+        return Lesson.objects.filter(course_id=course_pk)
 
-        if user.is_authenticated:
-            # If the user is a student, return only the lessons from courses they are enrolled in
-            if user.is_student:
-                return self.queryset.filter(course__students=user)
-            # If the user is an instructor, return lessons from courses they are teaching or enrolled in
-            elif user.is_instructor:
-                return self.queryset.filter(
-                    course__instructor=user
-                ) | self.queryset.filter(course__students=user)
-            else:
-                # For normal users (not students or instructors), return an empty queryset
-                return Lesson.objects.none()
-
-        return Lesson.objects.none()  # If the user is not authenticated
+    def perform_create(self, serializer):
+        course = Course.objects.get(pk=self.kwargs["course_pk"])
+        serializer.save(course=course)

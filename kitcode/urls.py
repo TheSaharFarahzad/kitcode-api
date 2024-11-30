@@ -54,7 +54,7 @@ urlpatterns = [
         TemplateView.as_view(template_name="password_reset_confirm.html"),
         name="password_reset_confirm",
     ),
-    path("api/", include("courses.urls")),
+    path("", include("courses.urls")),
     # path("api/v1/", include("your_app.urls.v1")),
     # path("api/v2/", include("your_app.urls.v2")),
 ]

@@ -1,74 +1,78 @@
-from rest_framework.permissions import SAFE_METHODS, BasePermission
+from rest_framework import permissions
+from courses.models import Course, UserRole
 
 
-class IsInstructorOrReadOnly(BasePermission):
+from rest_framework import permissions
+from courses.models import UserRole
+
+
+class IsInstructorOrReadOnly(permissions.BasePermission):
     """
-    Custom permission to allow instructors to perform all operations,
-    and all users to have read-only access.
+    Custom permission to allow instructors to edit or delete a course,
+    while others can only view the course.
     """
 
     def has_permission(self, request, view):
-        # Allow all users to perform SAFE_METHODS
-        if request.method in SAFE_METHODS:
+        # Allow read-only (SAFE_METHODS) for all users
+        if request.method in permissions.SAFE_METHODS:
             return True
 
-        # Allow only authenticated instructors to perform non-safe methods
-        return request.user.is_authenticated and request.user.is_instructor
+        # For non-read-only methods, user must be authenticated
+        return request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
-        # Allow all users to perform SAFE_METHODS on any object
-        if request.method in SAFE_METHODS:
+        """
+        Object-level permission:
+        - Allow SAFE_METHODS for all users
+        - Allow modifications only if the user is an instructor for the course
+        """
+        if request.method in permissions.SAFE_METHODS:
             return True
 
-        # Allow instructors to perform all operations on the course they created
-        return request.user == obj.instructor
+        return UserRole.objects.filter(
+            user=request.user, course=obj, role="instructor"
+        ).exists()
 
 
-class IsInstructor(BasePermission):
+class IsEnrolledStudent(permissions.BasePermission):
     """
-    Custom permission to allow only instructors to create/update/delete lessons.
+    Custom permission to check if the user is enrolled as a student in the course.
     """
 
     def has_permission(self, request, view):
-        # Allow only authenticated instructors for safe methods
-        if request.method in SAFE_METHODS:
-            return request.user.is_authenticated
+        # Allow anonymous users to see published lessons, if they're not authenticated
+        if not request.user.is_authenticated:
+            return False
 
-        # Allow only authenticated instructors to perform CRUD operations
-        return request.user.is_authenticated and request.user.is_instructor
+        course_pk = view.kwargs.get("course_pk")  # Get course PK from URL
+        if not course_pk:
+            return False
+
+        # Ensure the user is enrolled in the course
+        return UserRole.objects.filter(
+            user=request.user, course_id=course_pk, role="student"
+        ).exists()
 
     def has_object_permission(self, request, view, obj):
-        # Allow CRUD if the user is the instructor of the lesson's course
-        if request.user == obj.course.instructor:
-            return True
-
-        # Otherwise, allow only safe methods
-        return request.method in SAFE_METHODS
-
-
-class IsStudent(BasePermission):
-    """
-    Custom permission to allow only students to view lessons (GET).
-    """
-
-    def has_permission(self, request, view):
-        user = request.user
-        # Allow students to view lessons (GET) only
-        return (
-            user.is_authenticated and user.is_student and request.method in SAFE_METHODS
+        # Check that the user is enrolled in the course for each individual lesson object
+        return obj.course.is_published and (
+            obj.course.created_by == request.user
+            or UserRole.objects.filter(
+                user=request.user, course=obj.course, role="student"
+            ).exists()
         )
 
 
-class IsAuthenticatedUser(BasePermission):
+class IsAnonymousOrAuthenticated(permissions.BasePermission):
     """
-    Custom permission to allow only authenticated users (not student or instructor).
+    Custom permission to allow anonymous users to view courses,
+    but only authenticated users can create courses.
     """
 
     def has_permission(self, request, view):
-        user = request.user
-        return (
-            user.is_authenticated
-            and not user.is_student
-            and not user.is_instructor
-            and request.method in SAFE_METHODS
-        )
+        # Allow any user to view courses
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        # Allow only authenticated users to create courses
+        return request.user and request.user.is_authenticated

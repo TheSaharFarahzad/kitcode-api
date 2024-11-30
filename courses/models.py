@@ -27,35 +27,19 @@ class Course(models.Model):
         """
         self.is_published = True
         self.save()
-        # Assign the creator the 'instructor' role in this course.
-        UserRole.objects.get_or_create(
-            user=self.created_by,
-            course=self,
-            role="instructor",
-        )
+        self.assign_instructor(self.created_by)
 
-    def save(self, *args, **kwargs):
-        # Check if the course is being published (is_published=True)
-        if self.is_published:
-            # Assign the creator as an instructor if not already assigned
-            UserRole.objects.get_or_create(
-                user=self.created_by,
-                course=self,
-                role="instructor",
-            )
+    def assign_instructor(self, user):
+        """
+        Ensure the creator is assigned as the instructor for this course.
+        """
+        UserRole.objects.get_or_create(user=user, course=self, role="instructor")
 
-        # # If the course is unpublished, remove the instructor role
-        # elif not self.is_published:
-        #     # Find and delete the "instructor" role
-        #     UserRole.objects.filter(
-        #         course=self, user=self.created_by, role="instructor"
-        #     ).delete()
-
-        # Call the parent save method to save the course
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.title
+    def enroll_student(self, user):
+        """
+        Enroll a user as a student in this course.
+        """
+        UserRole.objects.get_or_create(user=user, course=self, role="student")
 
 
 class UserRole(models.Model):
