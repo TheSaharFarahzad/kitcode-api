@@ -1,8 +1,4 @@
 from rest_framework import permissions
-from courses.models import Course, UserRole
-
-
-from rest_framework import permissions
 from courses.models import UserRole
 
 
@@ -34,45 +30,39 @@ class IsInstructorOrReadOnly(permissions.BasePermission):
         ).exists()
 
 
-class IsEnrolledStudent(permissions.BasePermission):
+class IsAuthorizedForLesson(permissions.BasePermission):
     """
-    Custom permission to check if the user is enrolled as a student in the course.
+    Custom permission to allow only:
+    - The instructor of the course to view and manage lessons.
+    - Enrolled students to view lessons in the course.
     """
 
     def has_permission(self, request, view):
-        # Allow anonymous users to see published lessons, if they're not authenticated
         if not request.user.is_authenticated:
             return False
 
-        course_pk = view.kwargs.get("course_pk")  # Get course PK from URL
+        course_pk = view.kwargs.get("course_pk")
         if not course_pk:
             return False
 
-        # Ensure the user is enrolled in the course
+        # Allow access if the user is the instructor or a student in the course
         return UserRole.objects.filter(
-            user=request.user, course_id=course_pk, role="student"
+            user=request.user, course_id=course_pk, role__in=["instructor", "student"]
         ).exists()
 
     def has_object_permission(self, request, view, obj):
-        # Check that the user is enrolled in the course for each individual lesson object
-        return obj.course.is_published and (
-            obj.course.created_by == request.user
-            or UserRole.objects.filter(
-                user=request.user, course=obj.course, role="student"
-            ).exists()
-        )
-
-
-class IsAnonymousOrAuthenticated(permissions.BasePermission):
-    """
-    Custom permission to allow anonymous users to view courses,
-    but only authenticated users can create courses.
-    """
-
-    def has_permission(self, request, view):
-        # Allow any user to view courses
+        """
+        Object-level permission:
+        - Only instructors of the course can modify the lessons.
+        - Only enrolled students can view lessons in the course.
+        """
         if request.method in permissions.SAFE_METHODS:
-            return True
+            # Allow enrolled students or the instructor to view
+            return UserRole.objects.filter(
+                user=request.user, course=obj.course, role__in=["instructor", "student"]
+            ).exists()
 
-        # Allow only authenticated users to create courses
-        return request.user and request.user.is_authenticated
+        # Allow write permissions only to the instructor of the course
+        return UserRole.objects.filter(
+            user=request.user, course=obj.course, role="instructor"
+        ).exists()

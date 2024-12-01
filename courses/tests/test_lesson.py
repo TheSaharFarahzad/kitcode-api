@@ -122,7 +122,7 @@ def test_list_lessons(
             True,
             status.HTTP_403_FORBIDDEN,
             None,
-            "You do not have permission to create lessons in this course.",
+            "Only the instructor of the course can create lessons.",
         ),
         (
             "another_student",
