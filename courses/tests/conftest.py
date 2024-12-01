@@ -2,7 +2,7 @@ import pytest
 import random
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
-from courses.models import Course, Lesson
+from courses.models import Course, Lesson, UserRole
 
 
 # API client fixture
@@ -93,6 +93,11 @@ def setup_users_and_courses(create_user, create_course, create_lesson):
         "student@example.com",
         "1234.qaz",
     )
+    another_student = create_user(
+        "another_student",
+        "another_student@example.com",
+        "1234.qaz",
+    )
 
     # Create courses
     course1 = create_course(
@@ -114,19 +119,28 @@ def setup_users_and_courses(create_user, create_course, create_lesson):
         is_published=True,
     )
 
-    # Create lessons for courses
-    create_lesson(course1, "Lesson 1", "Django Basics", order=1)
-    create_lesson(course1, "Lesson 2", "Django Models", order=2)
-    create_lesson(course2, "Lesson 1", "Advanced Django Topics", order=1)
-    create_lesson(course3, "Lesson 1", "Python Basics", order=1)
+    # Enroll students in courses
+    course1.enroll_student(student_user)
+    course2.enroll_student(another_student)
 
-    # Return the users and courses for use in tests
+    # Create lessons for courses
+    lesson1 = create_lesson(course1, "Lesson 1", "Django Basics", order=1)
+    lesson2 = create_lesson(course1, "Lesson 2", "Django Models", order=2)
+    lesson3 = create_lesson(course2, "Lesson 1", "Advanced Django Topics", order=1)
+    lesson4 = create_lesson(course3, "Lesson 1", "Python Basics", order=1)
+
+    # Return the users, courses, and lessons for use in tests
     return {
         "regular_user": regular_user,
         "instructor_user": instructor_user,
         "another_instructor": another_instructor,
         "student_user": student_user,
+        "another_student": another_student,
         "course1": course1,
         "course2": course2,
         "course3": course3,
+        "lesson1": lesson1,
+        "lesson2": lesson2,
+        "lesson3": lesson3,
+        "lesson4": lesson4,
     }
