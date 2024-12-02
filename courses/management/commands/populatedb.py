@@ -3,6 +3,7 @@ from django.core.management.base import BaseCommand
 from django.db import IntegrityError
 from django.contrib.auth import get_user_model
 from courses.models import Course, UserRole, Lesson
+from allauth.account.models import EmailAddress
 
 
 class Command(BaseCommand):
@@ -73,6 +74,13 @@ class Command(BaseCommand):
         both_user.save()
 
         self.stdout.write(self.style.SUCCESS("Users created successfully."))
+
+        # Manually mark emails as verified
+        self._mark_email_verified(admin_user)
+        self._mark_email_verified(student_user)
+        self._mark_email_verified(instructor_user)
+        self._mark_email_verified(regular_user)
+        self._mark_email_verified(both_user)
 
         # Create courses
         self.stdout.write(self.style.NOTICE("Creating courses..."))
@@ -157,3 +165,9 @@ class Command(BaseCommand):
         """Helper function to avoid duplicate roles."""
         if not UserRole.objects.filter(user=user, course=course, role=role).exists():
             UserRole.objects.create(user=user, course=course, role=role)
+
+    def _mark_email_verified(self, user):
+        """Helper function to mark the user's email as verified."""
+        EmailAddress.objects.create(
+            user=user, email=user.email, verified=True, primary=True
+        )

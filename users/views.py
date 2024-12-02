@@ -1,3 +1,6 @@
-from django.shortcuts import render
+from dj_rest_auth.registration.views import ResendEmailVerificationView
+from .serializers import CustomResendEmailVerificationSerializer
 
-# Create your views here.
+
+class CustomResendEmailVerificationView(ResendEmailVerificationView):
+    serializer_class = CustomResendEmailVerificationSerializer
