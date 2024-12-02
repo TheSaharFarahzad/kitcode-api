@@ -1,87 +1,93 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from .models import Course, Lesson, UserRole
-from .serializers import CourseSerializer, LessonSerializer
-from users.permissions import (
-    IsInstructorOrReadOnly,
-    IsAuthorizedForLesson,
-)
-from django.db.models import Q
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.core.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied
+from django.db.models import Q
+
+from .models import Course, Lesson, UserRole
+from .serializers import CourseSerializer, LessonSerializer
+from users.permissions import IsInstructorOrReadOnly, IsAuthorizedForLesson
 
 
 class CourseViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing courses:
+    - Instructors can create, update, or delete courses.
+    - Authenticated users can enroll in courses.
+    - All users can view published courses.
+    """
+
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
     permission_classes = [IsInstructorOrReadOnly]
 
-    @action(detail=True, methods=["post"])
+    def get_queryset(self):
+        """
+        Retrieve courses based on the user's role:
+        - Authenticated users: Courses they created or published courses.
+        - Unauthenticated users: Published courses only.
+        """
+        user = self.request.user
+        if user.is_authenticated:
+            return Course.objects.filter(
+                Q(is_published=True) | Q(created_by=user)
+            ).distinct()
+        return Course.objects.filter(is_published=True)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def enroll(self, request, pk=None):
         """
-        Enroll the authenticated user as a student in the course.
+        Enroll the requesting user as a student in the specified course.
         """
         course = self.get_object()
         course.enroll_student(request.user)
         return Response({"status": "enrolled"})
 
-    def get_queryset(self):
-        """
-        Limit the courses returned based on user role.
-        """
-        user = self.request.user
-        if user.is_authenticated:
-            # Show courses the user created or all published courses
-            return Course.objects.filter(
-                Q(is_published=True) | Q(created_by=user)
-            ).distinct()
-        # For unauthenticated users, show only published courses
-        return Course.objects.filter(is_published=True)
-
 
 class LessonViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing lessons:
+    - Instructors can create, update, or delete lessons.
+    - Students can view lessons from published courses.
+    """
+
     serializer_class = LessonSerializer
     permission_classes = [IsAuthenticated, IsAuthorizedForLesson]
 
     def get_queryset(self):
         """
-        Restrict the lessons visible to the current user:
-        - Instructors: All lessons for their course.
-        - Students: Lessons only from their enrolled courses.
+        Retrieve lessons for the specified course based on the user's role:
+        - Instructors: All lessons.
+        - Students: Lessons in published courses only.
         """
-        course_pk = self.kwargs["course_pk"]
-        course = Course.objects.get(pk=course_pk)
-
-        if not UserRole.objects.filter(
-            user=self.request.user, course=course, role__in=["instructor", "student"]
-        ).exists():
-            # Return no lessons for unauthorized users
+        course_pk = self.kwargs.get("course_pk")
+        if not course_pk:
             return Lesson.objects.none()
 
-        if UserRole.objects.filter(
-            user=self.request.user, course=course, role="instructor"
-        ).exists():
-            # Instructor can view all lessons in their course
+        course = Course.objects.filter(pk=course_pk).first()
+        if not course:
+            return Lesson.objects.none()
+
+        if UserRole.objects.is_role(
+            self.request.user, course, UserRole.ROLE_INSTRUCTOR
+        ):
             return Lesson.objects.filter(course=course)
-
-        if UserRole.objects.filter(
-            user=self.request.user, course=course, role="student"
-        ).exists():
-            # Students can only view lessons in their enrolled courses
+        elif UserRole.objects.is_role(self.request.user, course, UserRole.ROLE_STUDENT):
             return Lesson.objects.filter(course=course, course__is_published=True)
-
         return Lesson.objects.none()
 
     def perform_create(self, serializer):
         """
-        Ensure only the instructor of the course can create lessons.
+        Create a new lesson in the specified course.
+        - Only instructors can create lessons.
         """
-        course = Course.objects.get(pk=self.kwargs["course_pk"])
-        if not UserRole.objects.filter(
-            user=self.request.user, course=course, role="instructor"
-        ).exists():
-            raise PermissionDenied(
-                "Only the instructor of the course can create lessons."
-            )
+        course_pk = self.kwargs.get("course_pk")
+        course = Course.objects.get(pk=course_pk)
+
+        if not UserRole.objects.is_role(
+            self.request.user, course, UserRole.ROLE_INSTRUCTOR
+        ):
+            raise PermissionDenied("Only instructors can create lessons.")
+
         serializer.save(course=course)

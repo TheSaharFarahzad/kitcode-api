@@ -1,20 +1,22 @@
 from rest_framework import serializers
-from .models import Course, Lesson, UserRole
-from users.models import User
+from .models import Course, Lesson
 
 
 class CourseSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Course model.
+    - Excludes `created_by` from user input, automatically assigning it to the request user.
+    """
+
     class Meta:
         model = Course
-        exclude = ["created_by"]  # Exclude `created_by` from API payload
+        exclude = ["created_by"]
 
     def create(self, validated_data):
         """
-        Create the course and set the creator explicitly.
+        Create a new course, assigning the request user as its creator and instructor.
         """
-        request = self.context.get("request")  # Get request from context
-        user = request.user if request and request.user.is_authenticated else None
-        # Remove any potential `created_by` key from `validated_data`
+        user = self.context["request"].user
         validated_data.pop("created_by", None)
         course = Course.objects.create(created_by=user, **validated_data)
         course.assign_instructor(user)
@@ -22,19 +24,22 @@ class CourseSerializer(serializers.ModelSerializer):
 
 
 class LessonSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Lesson model.
+    - Ensures lesson order is unique within a course.
+    """
+
     class Meta:
         model = Lesson
         fields = "__all__"
 
     def validate(self, attrs):
-        # Ensure the lesson order is unique per course
-        if Lesson.objects.filter(course=attrs["course"], order=attrs["order"]).exists():
-            raise serializers.ValidationError("Lesson order must be unique per course.")
+        """
+        Validate lesson order to ensure uniqueness within the course.
+        """
+        course = attrs.get("course")
+        if Lesson.objects.filter(course=course, order=attrs["order"]).exists():
+            raise serializers.ValidationError(
+                "Lesson order must be unique within the course."
+            )
         return attrs
-
-    # def validate_order(self, value):
-    #     # Check if a lesson with the same order exists for the given course
-    #     course = self.initial_data.get("course")
-    #     if Lesson.objects.filter(order=value, course=course).exists():
-    #         raise serializers.ValidationError("This order exists.")
-    #     return value

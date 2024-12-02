@@ -4,40 +4,45 @@ from courses.models import UserRole
 
 class IsInstructorOrReadOnly(permissions.BasePermission):
     """
-    Custom permission to allow instructors to edit or delete a course,
-    while others can only view the course.
+    Custom permission:
+    - Allows instructors to modify a course.
+    - Grants read-only access (SAFE_METHODS) to all users.
     """
 
-    def has_permission(self, request, view):
-        # Allow read-only (SAFE_METHODS) for all users
+    def has_permission(self, request, view) -> bool:
+        """
+        Global permission check.
+        """
         if request.method in permissions.SAFE_METHODS:
             return True
-
-        # For non-read-only methods, user must be authenticated
         return request.user.is_authenticated
 
-    def has_object_permission(self, request, view, obj):
+    def has_object_permission(self, request, view, obj) -> bool:
         """
         Object-level permission:
-        - Allow SAFE_METHODS for all users
-        - Allow modifications only if the user is an instructor for the course
+        - Read-only access for all users.
+        - Write access only for instructors of the course.
         """
         if request.method in permissions.SAFE_METHODS:
             return True
 
-        return UserRole.objects.filter(
-            user=request.user, course=obj, role="instructor"
-        ).exists()
+        return UserRole.objects.is_role(
+            user=request.user, course=obj, role=UserRole.ROLE_INSTRUCTOR
+        )
 
 
 class IsAuthorizedForLesson(permissions.BasePermission):
     """
-    Custom permission to allow only:
-    - The instructor of the course to view and manage lessons.
-    - Enrolled students to view lessons in the course.
+    Custom permission:
+    - Grants access to lessons if the user is enrolled in the course
+      (as an instructor or a student).
+    - Write access is restricted to instructors only.
     """
 
-    def has_permission(self, request, view):
+    def has_permission(self, request, view) -> bool:
+        """
+        Global permission check for lessons.
+        """
         if not request.user.is_authenticated:
             return False
 
@@ -45,24 +50,25 @@ class IsAuthorizedForLesson(permissions.BasePermission):
         if not course_pk:
             return False
 
-        # Allow access if the user is the instructor or a student in the course
         return UserRole.objects.filter(
-            user=request.user, course_id=course_pk, role__in=["instructor", "student"]
+            user=request.user,
+            course_id=course_pk,
+            role__in=[UserRole.ROLE_INSTRUCTOR, UserRole.ROLE_STUDENT],
         ).exists()
 
-    def has_object_permission(self, request, view, obj):
+    def has_object_permission(self, request, view, obj) -> bool:
         """
-        Object-level permission:
-        - Only instructors of the course can modify the lessons.
-        - Only enrolled students can view lessons in the course.
+        Object-level permission for lessons.
+        - Read-only access for enrolled users.
+        - Write access for instructors only.
         """
         if request.method in permissions.SAFE_METHODS:
-            # Allow enrolled students or the instructor to view
             return UserRole.objects.filter(
-                user=request.user, course=obj.course, role__in=["instructor", "student"]
+                user=request.user,
+                course=obj.course,
+                role__in=[UserRole.ROLE_INSTRUCTOR, UserRole.ROLE_STUDENT],
             ).exists()
 
-        # Allow write permissions only to the instructor of the course
-        return UserRole.objects.filter(
-            user=request.user, course=obj.course, role="instructor"
-        ).exists()
+        return UserRole.objects.is_role(
+            user=request.user, course=obj.course, role=UserRole.ROLE_INSTRUCTOR
+        )
