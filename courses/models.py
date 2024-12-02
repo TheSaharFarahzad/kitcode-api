@@ -126,10 +126,13 @@ class UserRole(models.Model):
         Validates the role assignment.
         Ensures only one instructor per course.
         """
-        if self.role == self.ROLE_INSTRUCTOR and UserRole.objects.is_role(
-            None, self.course, self.ROLE_INSTRUCTOR
-        ):
-            raise ValidationError("A course can only have one instructor.")
+        if self.role == self.ROLE_INSTRUCTOR:
+            if (
+                UserRole.objects.filter(course=self.course, role=self.ROLE_INSTRUCTOR)
+                .exclude(id=self.id)
+                .exists()
+            ):
+                raise ValidationError("A course can only have one instructor.")
 
     def __str__(self):
         return f"{self.user.username} - {self.role} in {self.course.title}"
