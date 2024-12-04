@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "dj_rest_auth",
     "allauth",
     "allauth.account",
+    "allauth.socialaccount",
     "dj_rest_auth.registration",
     "courses",
     "users",
@@ -94,7 +95,23 @@ SPECTACULAR_SETTINGS = {
 
 REST_AUTH = {
     "SESSION_LOGIN": False,
+    "PASSWORD_RESET_SERIALIZER": "users.serializers.CustomPasswordResetSerializer",
 }
+
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+# Allow email and/or username authentication
+ACCOUNT_AUTHENTICATION_METHOD = "username_email"
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+
+# Optional: If you don't want to require a username for registration, set this to False
+ACCOUNT_USERNAME_REQUIRED = True
+UNIQUE_EMAIL = True
 
 
 EMAIL_BACKEND = env(

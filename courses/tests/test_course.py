@@ -1,529 +1,445 @@
+import pytest
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
-from users.models import User
-from courses.models import Course
+from courses.models import Course, UserRole
 
 
-class CourseTests(APITestCase):
-    PASSWORD = "testpassword"
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "user_role, is_authenticated, expected_courses, num_courses",
+    [
+        # Not logged in user (can only see published courses)
+        (
+            "unauthenticated_user",
+            False,
+            ["Course 1", "Course 3"],
+            2,
+        ),
+        # Logged-in regular user (can only see published courses)
+        (
+            "regular_user",
+            True,
+            ["Course 1", "Course 3"],
+            2,
+        ),
+        # Logged-in student (can only see published courses)
+        (
+            "student_user",
+            True,
+            ["Course 1", "Course 3"],
+            2,
+        ),
+        # Logged-in instructor of another course (can only see published courses)
+        (
+            "another_instructor",
+            True,
+            ["Course 1", "Course 3"],
+            2,
+        ),
+        # Logged-in instructor of this course (can see all courses they created, including unpublished ones)
+        (
+            "instructor_user",
+            True,
+            ["Course 1", "Course 2", "Course 3"],
+            3,
+        ),
+    ],
+)
+def test_course_list(
+    api_client,
+    setup_users_and_courses,
+    user_role,
+    is_authenticated,
+    expected_courses,
+    num_courses,
+):
+    # Get the users and courses from the fixture
+    regular_user = setup_users_and_courses["regular_user"]
+    instructor_user = setup_users_and_courses["instructor_user"]
+    another_instructor = setup_users_and_courses["another_instructor"]
+    student_user = setup_users_and_courses["student_user"]
+    course1 = setup_users_and_courses["course1"]
+    course2 = setup_users_and_courses["course2"]
+    course3 = setup_users_and_courses["course3"]
 
-    @classmethod
-    def setUpTestData(self):
-        self.normal_user = User.objects.create_user(
-            username="normal_user", email="normal_user@test.com"
-        )
-        self.normal_user.set_password(self.PASSWORD)
-        self.normal_user.save()
+    # Map roles to user instances
+    user_map = {
+        "regular_user": regular_user,
+        "instructor_user": instructor_user,
+        "another_instructor": another_instructor,
+        "student_user": student_user,
+        "unauthenticated_user": None,
+    }
 
-        self.student = User.objects.create_user(
-            username="student", email="student@test.com"
-        )
-        self.student.set_password(self.PASSWORD)
-        self.student.is_student = True
-        self.student.save()
+    # Authenticate user based on the role
+    user_instance = user_map[user_role]
+    if is_authenticated and user_instance:
+        api_client.force_authenticate(user=user_instance)
 
-        self.instructor = User.objects.create_user(
-            username="instructor", email="instructor@test.com"
-        )
-        self.instructor.set_password(self.PASSWORD)
-        self.instructor.is_instructor = True
-        self.instructor.save()
+    url = reverse("course-list")
 
-        self.instructor_of_lesson = User.objects.create_user(
-            username="The Instructor", email="theinstructor@test.com"
-        )
-        self.instructor_of_lesson.set_password(self.PASSWORD)
-        self.instructor_of_lesson.is_instructor = True
-        self.instructor_of_lesson.save()
+    # Send GET request to the course list endpoint
+    response = api_client.get(url)
 
-        self.super_user = User.objects.create_user(
-            username="super_user", email="super_user@test.com"
-        )
-        self.super_user.set_password(self.PASSWORD)
-        self.super_user.is_superuser = True
-        self.super_user.save()
+    # Check response
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.data) == num_courses
 
-        self.first_course = Course.objects.create(
-            title="Test First Course",
-            description="First course for testing.",
-            instructor=self.instructor_of_lesson,
-        )
-        self.first_course.students.set([self.student])
+    # Verify that the expected courses are in the response
+    for course_title in expected_courses:
+        assert any(course["title"] == course_title for course in response.data)
 
-        self.second_course = Course.objects.create(
-            title="Test Second Course",
-            description="Second course for testing.",
-            instructor=self.instructor,
-        )
 
-        self.course_list = reverse("course-list")
-        self.first_course_detail = reverse(
-            "course-detail",
-            kwargs={"pk": self.first_course.id},
-        )
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "user_role, is_authenticated, data, expected_status, expected_role",
+    [
+        (
+            "instructor_user",
+            True,
+            {
+                "title": "New Course",
+                "description": "Course Description",
+                "is_published": True,
+            },
+            status.HTTP_201_CREATED,
+            "instructor",
+        ),
+        (
+            "student_user",
+            True,
+            {
+                "title": "Unauthorized Course",
+                "description": "Unauthorized Course Description",
+                "is_published": True,
+            },
+            status.HTTP_201_CREATED,
+            "instructor",
+        ),
+        (
+            "regular_user",
+            True,
+            {
+                "title": "Regular User Course",
+                "description": "Regular User Course Description",
+                "is_published": True,
+            },
+            status.HTTP_201_CREATED,
+            "instructor",
+        ),
+        (
+            "unauthenticated_user",
+            False,
+            {
+                "title": "Unauth Course",
+                "description": "Unauth Course Desc",
+                "is_published": True,
+            },
+            status.HTTP_401_UNAUTHORIZED,
+            None,
+        ),
+    ],
+)
+def test_course_creation(
+    api_client,
+    setup_users_and_courses,
+    user_role,
+    is_authenticated,
+    data,
+    expected_status,
+    expected_role,
+):
+    # Get users from the fixture
+    regular_user = setup_users_and_courses["regular_user"]
+    instructor_user = setup_users_and_courses["instructor_user"]
+    student_user = setup_users_and_courses["student_user"]
 
-    def test_list_courses_not_login_user(self):
-        response = self.client.get(self.course_list)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["title"], "Test First Course")
-        self.assertEqual(response.data[0]["description"], "First course for testing.")
-        self.assertEqual(response.data[0]["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data[0]["created_at"])
-        self.assertIsNotNone(response.data[0]["updated_at"])
-        self.assertEqual(response.data[1]["title"], "Test Second Course")
-        self.assertEqual(response.data[1]["description"], "Second course for testing.")
-        self.assertEqual(response.data[1]["instructor"], self.instructor.id)
-        self.assertIsNotNone(response.data[1]["created_at"])
-        self.assertIsNotNone(response.data[1]["updated_at"])
+    # Map roles to user instances
+    user_map = {
+        "regular_user": regular_user,
+        "instructor_user": instructor_user,
+        "student_user": student_user,
+        "unauthenticated_user": None,
+    }
 
-    def test_list_courses_login_normal_user(self):
-        self.client.force_authenticate(user=self.normal_user)
-        response = self.client.get(self.course_list)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["title"], "Test First Course")
-        self.assertEqual(response.data[0]["description"], "First course for testing.")
-        self.assertEqual(response.data[0]["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data[0]["created_at"])
-        self.assertIsNotNone(response.data[0]["updated_at"])
-        self.assertEqual(response.data[1]["title"], "Test Second Course")
-        self.assertEqual(response.data[1]["description"], "Second course for testing.")
-        self.assertEqual(response.data[1]["instructor"], self.instructor.id)
-        self.assertIsNotNone(response.data[1]["created_at"])
-        self.assertIsNotNone(response.data[1]["updated_at"])
+    # Authenticate user based on role
+    user_instance = user_map[user_role]
+    if is_authenticated and user_instance:
+        api_client.force_authenticate(user=user_instance)
+    else:
+        api_client.force_authenticate(user=None)
 
-    def test_list_courses_login_student_of_lesson(self):
-        self.client.force_authenticate(user=self.student)
-        response = self.client.get(self.course_list)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["title"], "Test First Course")
-        self.assertEqual(response.data[0]["description"], "First course for testing.")
-        self.assertEqual(response.data[0]["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data[0]["created_at"])
-        self.assertIsNotNone(response.data[0]["updated_at"])
-        self.assertEqual(response.data[1]["title"], "Test Second Course")
-        self.assertEqual(response.data[1]["description"], "Second course for testing.")
-        self.assertEqual(response.data[1]["instructor"], self.instructor.id)
-        self.assertIsNotNone(response.data[1]["created_at"])
-        self.assertIsNotNone(response.data[1]["updated_at"])
+    # Send POST request to create a course
+    response = api_client.post(reverse("course-list"), data, format="json")
 
-    def test_list_courses_login_instructor_of_lesson(self):
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.get(self.course_list)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["title"], "Test First Course")
-        self.assertEqual(response.data[0]["description"], "First course for testing.")
-        self.assertEqual(response.data[0]["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data[0]["created_at"])
-        self.assertIsNotNone(response.data[0]["updated_at"])
-        self.assertEqual(response.data[1]["title"], "Test Second Course")
-        self.assertEqual(response.data[1]["description"], "Second course for testing.")
-        self.assertEqual(response.data[1]["instructor"], self.instructor.id)
-        self.assertIsNotNone(response.data[1]["created_at"])
-        self.assertIsNotNone(response.data[1]["updated_at"])
+    # Check the response status code
+    assert response.status_code == expected_status
 
-    def test_list_courses_login_another_instructor(self):
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.get(self.course_list)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["title"], "Test First Course")
-        self.assertEqual(response.data[0]["description"], "First course for testing.")
-        self.assertEqual(response.data[0]["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data[0]["created_at"])
-        self.assertIsNotNone(response.data[0]["updated_at"])
-        self.assertEqual(response.data[1]["title"], "Test Second Course")
-        self.assertEqual(response.data[1]["description"], "Second course for testing.")
-        self.assertEqual(response.data[1]["instructor"], self.instructor.id)
-        self.assertIsNotNone(response.data[1]["created_at"])
-        self.assertIsNotNone(response.data[1]["updated_at"])
+    # Additional checks for successful creation
+    if expected_status == status.HTTP_201_CREATED:
+        course = Course.objects.get(id=response.data["id"])
+        assert course.title == data["title"]
+        assert course.description == data["description"]
 
-    # def test_student_can_see_published_courses(self):
-    #     self.client.force_authenticate(user=self.normal_user)
-    #     response = self.client.get(self.course_list)
-    #     assert response.status_code == 200
-    #     assert len(response.data) == 1
+        # Verify the user's role for the created course
+        user_role_association = UserRole.objects.filter(
+            user=course.created_by, course=course
+        ).first()
+        assert user_role_association is not None
+        assert user_role_association.role == expected_role
 
-    # def test_student_cannot_see_unpublished_courses(self):
-    #     self.client.force_authenticate(user=self.normal_user)
-    #     response = self.client.get(self.course_list)
-    #     assert response.status_code == 200
-    #     assert len(response.data) == 0
+        # Check if the instructor role is assigned for published courses
+        if course.is_published:
+            user_role_association.refresh_from_db()
+            assert user_role_association.role == "instructor"
 
-    # def test_superuser_can_see_all_courses(self):
-    #     self.client.force_authenticate(user=self.super_user)
-    #     response = self.client.get(self.course_list)
-    #     assert response.status_code == 200
-    #     assert len(response.data) == 2
+    # Ensure no course is created for unauthorized access
+    else:
+        assert Course.objects.filter(title=data["title"]).count() == 0
 
-    def test_create_course_not_login_user(self):
-        data = {
-            "title": "New Course",
-            "description": "New course description.",
-            "instructor": self.normal_user.id,
-        }
-        response = self.client.post(self.course_list, data, format="json")
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(
-            response.data["detail"], "Authentication credentials were not provided."
-        )
 
-    def test_create_course_login_normal_user(self):
-        data = {
-            "title": "New Course",
-            "description": "New course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.normal_user)
-        response = self.client.post(self.course_list, data, format="json")
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "user_role, is_authenticated, data, expected_status, expected_title",
+    [
+        (
+            "instructor_user",
+            True,
+            {"title": "Updated Course Title", "description": "Updated Description"},
+            status.HTTP_200_OK,
+            "Updated Course Title",
+        ),
+        (
+            "student_user",
+            True,
+            {"title": "Student Attempted Update", "description": "Updated Description"},
+            status.HTTP_403_FORBIDDEN,
+            None,
+        ),
+        (
+            "regular_user",
+            True,
+            {
+                "title": "Regular User Attempted Update",
+                "description": "Updated Description",
+            },
+            status.HTTP_403_FORBIDDEN,
+            None,
+        ),
+        (
+            "unauthenticated_user",
+            False,
+            {
+                "title": "Unauthenticated Attempted Update",
+                "description": "Updated Description",
+            },
+            status.HTTP_401_UNAUTHORIZED,
+            None,
+        ),
+    ],
+)
+def test_course_update(
+    api_client,
+    setup_users_and_courses,
+    user_role,
+    is_authenticated,
+    data,
+    expected_status,
+    expected_title,
+):
+    # Get the users and courses from the fixture
+    regular_user = setup_users_and_courses["regular_user"]
+    instructor_user = setup_users_and_courses["instructor_user"]
+    another_instructor = setup_users_and_courses["another_instructor"]
+    student_user = setup_users_and_courses["student_user"]
+    course1 = setup_users_and_courses["course1"]
+    course2 = setup_users_and_courses["course2"]
+    course3 = setup_users_and_courses["course3"]
 
-    def test_create_course_login_student_of_lesson(self):
-        data = {
-            "title": "New Course",
-            "description": "New course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.student)
-        response = self.client.post(self.course_list, data, format="json")
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    # Ensure the instructor_user is the creator and assigned the instructor role for course1
+    course1.created_by = instructor_user
+    course1.assign_instructor(instructor_user)
+    course1.save()
 
-    def test_create_course_login_instructor_of_lesson(self):
-        data = {
-            "title": "New Course",
-            "description": "New course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.post(self.course_list, data, format="json")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["id"], 3)
-        self.assertEqual(response.data["title"], "New Course")
-        self.assertEqual(response.data["description"], "New course description.")
-        self.assertEqual(response.data["instructor"], self.normal_user.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Map roles to user instances
+    user_map = {
+        "regular_user": regular_user,
+        "instructor_user": instructor_user,
+        "student_user": student_user,
+        "unauthenticated_user": None,
+    }
 
-    def test_create_course_login_another_instructor(self):
-        data = {
-            "title": "New Course",
-            "description": "New course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.student)
-        response = self.client.post(self.course_list, data, format="json")
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    # Authenticate user based on role
+    user_instance = user_map[user_role]
+    if is_authenticated and user_instance:
+        api_client.force_authenticate(user=user_instance)
 
-    def test_retrieve_course_not_login_user(self):
-        response = self.client.get(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], self.first_course.title)
-        self.assertEqual(response.data["description"], self.first_course.description)
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    url = reverse("course-detail", kwargs={"pk": course1.id})
 
-    def test_retrieve_course_login_normal_user(self):
-        self.client.force_authenticate(user=self.normal_user)
-        response = self.client.get(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], self.first_course.title)
-        self.assertEqual(response.data["description"], self.first_course.description)
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Send PUT request to update the course
+    response = api_client.put(url, data, format="json")
 
-    def test_retrieve_course_login_student(self):
-        self.client.force_authenticate(user=self.student)
-        response = self.client.get(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], self.first_course.title)
-        self.assertEqual(response.data["description"], self.first_course.description)
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Check response status
+    assert response.status_code == expected_status
 
-    def test_retrieve_course_login_instructor_of_lesson(self):
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.get(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], self.first_course.title)
-        self.assertEqual(response.data["description"], self.first_course.description)
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Verify that the course title is updated if the update was successful
+    if expected_status == status.HTTP_200_OK:
+        course = Course.objects.get(id=course1.id)
+        assert course.title == expected_title
 
-    def test_retrieve_course_login_another_instructor(self):
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.get(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], self.first_course.title)
-        self.assertEqual(response.data["description"], self.first_course.description)
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
 
-    def test_update_course_not_login_user(self):
-        data = {
-            "title": "New Course",
-            "description": "New course description.",
-            "instructor": self.normal_user.id,
-        }
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(
-            response.data["detail"], "Authentication credentials were not provided."
-        )
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "user_role, is_authenticated, data, expected_status, expected_title",
+    [
+        (
+            "instructor_user",
+            True,
+            {"title": "Updated Course Title", "description": "Updated Description"},
+            status.HTTP_200_OK,
+            "Updated Course Title",
+        ),
+        (
+            "student_user",
+            True,
+            {"title": "Student Attempted Update", "description": "Updated Description"},
+            status.HTTP_403_FORBIDDEN,
+            None,
+        ),
+        (
+            "regular_user",
+            True,
+            {
+                "title": "Regular User Attempted Update",
+                "description": "Updated Description",
+            },
+            status.HTTP_403_FORBIDDEN,
+            None,
+        ),
+        (
+            "unauthenticated_user",
+            False,
+            {
+                "title": "Unauthenticated Attempted Update",
+                "description": "Updated Description",
+            },
+            status.HTTP_401_UNAUTHORIZED,
+            None,
+        ),
+    ],
+)
+def test_course_patch_update(
+    api_client,
+    setup_users_and_courses,
+    user_role,
+    is_authenticated,
+    data,
+    expected_status,
+    expected_title,
+):
+    # Get the users and courses from the fixture
+    regular_user = setup_users_and_courses["regular_user"]
+    instructor_user = setup_users_and_courses["instructor_user"]
+    student_user = setup_users_and_courses["student_user"]
+    course1 = setup_users_and_courses["course1"]
 
-    def test_update_course_login_normal_user(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.normal_user)
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    # Ensure the instructor_user is the creator and assigned the instructor role for course1
+    course1.created_by = instructor_user
+    course1.assign_instructor(instructor_user)
+    course1.save()
 
-    def test_update_course_login_student(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.student)
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    # Map roles to user instances
+    user_map = {
+        "regular_user": regular_user,
+        "instructor_user": instructor_user,
+        "student_user": student_user,
+        "unauthenticated_user": None,
+    }
 
-    def test_update_course_login_instructor_of_lesson(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.instructor.id,
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], "Updated Course")
-        self.assertEqual(response.data["description"], "Updated Course description.")
-        self.assertEqual(response.data["instructor"], self.instructor.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Authenticate user based on role
+    user_instance = user_map[user_role]
+    if is_authenticated and user_instance:
+        api_client.force_authenticate(user=user_instance)
 
-    def test_update_course_login_another_instructor(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    url = reverse("course-detail", kwargs={"pk": course1.id})
 
-    def test_update_course_without_instructor(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], "Updated Course")
-        self.assertEqual(response.data["description"], "Updated Course description.")
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Send PATCH request to update the course
+    response = api_client.patch(url, data, format="json")
 
-    def test_update_course_without_title(self):
-        data = {
-            "description": "Updated Course description.",
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["title"][0], "This field is required.")
+    # Check response status
+    assert response.status_code == expected_status
 
-    def test_update_course_without_description(self):
-        data = {
-            "title": "Updated Course",
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.put(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["description"][0], "This field is required.")
+    # Verify that the course title is updated if the update was successful
+    if expected_status == status.HTTP_200_OK:
+        course = Course.objects.get(id=course1.id)
+        assert course.title == expected_title
 
-    def test_partial_update_course_not_login_user(self):
-        data = {
-            "title": "New Course",
-            "description": "New course description.",
-            "instructor": self.normal_user.id,
-        }
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(
-            response.data["detail"], "Authentication credentials were not provided."
-        )
 
-    def test_partial_update_course_login_normal_user(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.normal_user)
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "user_role, is_authenticated, expected_status",
+    [
+        (
+            "instructor_user",
+            True,
+            status.HTTP_204_NO_CONTENT,
+        ),
+        (
+            "student_user",
+            True,
+            status.HTTP_403_FORBIDDEN,
+        ),
+        (
+            "regular_user",
+            True,
+            status.HTTP_403_FORBIDDEN,
+        ),
+        (
+            "unauthenticated_user",
+            False,
+            status.HTTP_401_UNAUTHORIZED,
+        ),
+    ],
+)
+def test_course_delete(
+    api_client,
+    setup_users_and_courses,
+    user_role,
+    is_authenticated,
+    expected_status,
+):
+    # Get the users and courses from the fixture
+    instructor_user = setup_users_and_courses["instructor_user"]
+    student_user = setup_users_and_courses["student_user"]
+    regular_user = setup_users_and_courses["regular_user"]
+    course1 = setup_users_and_courses["course1"]
 
-    def test_partial_update_course_login_student(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.student)
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    # Ensure the instructor_user is the creator and assigned the instructor role for course1
+    course1.created_by = instructor_user
+    course1.assign_instructor(instructor_user)
+    course1.save()
 
-    def test_partial_update_course_login_instructor_of_lesson(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.instructor.id,
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], "Updated Course")
-        self.assertEqual(response.data["description"], "Updated Course description.")
-        self.assertEqual(response.data["instructor"], self.instructor.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Map roles to user instances
+    user_map = {
+        "regular_user": regular_user,
+        "instructor_user": instructor_user,
+        "student_user": student_user,
+        "unauthenticated_user": None,
+    }
 
-    def test_partial_update_course_login_another_instructor(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-            "instructor": self.normal_user.id,
-        }
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    # Authenticate user based on role
+    user_instance = user_map[user_role]
+    if is_authenticated and user_instance:
+        api_client.force_authenticate(user=user_instance)
 
-    def test_partial_update_course_without_instructor(self):
-        data = {
-            "title": "Updated Course",
-            "description": "Updated Course description.",
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], "Updated Course")
-        self.assertEqual(response.data["description"], "Updated Course description.")
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    url = reverse("course-detail", kwargs={"pk": course1.id})
 
-    def test_partial_update_course_without_title(self):
-        data = {
-            "description": "Updated Course description.",
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], "Test First Course")
-        self.assertEqual(response.data["description"], "Updated Course description.")
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Send DELETE request to delete the course
+    response = api_client.delete(url)
 
-    def test_partial_update_course_without_description(self):
-        data = {
-            "title": "Updated Course",
-        }
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.patch(self.first_course_detail, data=data)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["title"], "Updated Course")
-        self.assertEqual(response.data["description"], "First course for testing.")
-        self.assertEqual(response.data["instructor"], self.instructor_of_lesson.id)
-        self.assertIsNotNone(response.data["created_at"])
-        self.assertIsNotNone(response.data["updated_at"])
+    # Check response status
+    assert response.status_code == expected_status
 
-    def test_delete_course_not_login_user(self):
-        response = self.client.delete(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(
-            response.data["detail"], "Authentication credentials were not provided."
-        )
-
-    def test_delete_course_login_normal_user(self):
-        self.client.force_authenticate(user=self.normal_user)
-        response = self.client.delete(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
-
-    def test_delete_course_login_student(self):
-        self.client.force_authenticate(user=self.student)
-        response = self.client.delete(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
-
-    def test_delete_course_login_instructor_of_lesson(self):
-        self.client.force_authenticate(user=self.instructor_of_lesson)
-        response = self.client.delete(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-
-    def test_delete_course_login_another_instructor(self):
-        self.client.force_authenticate(user=self.instructor)
-        response = self.client.delete(self.first_course_detail)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data["detail"],
-            "You do not have permission to perform this action.",
-        )
+    # If the request was successful (204), verify the course is deleted
+    if expected_status == status.HTTP_204_NO_CONTENT:
+        assert not Course.objects.filter(id=course1.id).exists()

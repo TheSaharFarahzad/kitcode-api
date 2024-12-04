@@ -1,39 +1,45 @@
 from rest_framework import serializers
 from .models import Course, Lesson
-from users.models import User
 
 
 class CourseSerializer(serializers.ModelSerializer):
-    instructor = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), required=False
-    )
+    """
+    Serializer for the Course model.
+    - Excludes `created_by` from user input, automatically assigning it to the request user.
+    """
 
     class Meta:
         model = Course
-        fields = [
-            "id",
-            "title",
-            "description",
-            "created_at",
-            "updated_at",
-            "instructor",
-        ]
+        exclude = ["created_by"]
+
+    def create(self, validated_data):
+        """
+        Create a new course, assigning the request user as its creator and instructor.
+        """
+        user = self.context["request"].user
+        validated_data.pop("created_by", None)
+        course = Course.objects.create(created_by=user, **validated_data)
+        course.assign_instructor(user)
+        return course
 
 
 class LessonSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Lesson model.
+    - Ensures lesson order is unique within a course.
+    """
+
     class Meta:
         model = Lesson
-        fields = [
-            "id",
-            "course",
-            "title",
-            "content",
-            "order",
-        ]
+        fields = "__all__"
 
-    def validate_order(self, value):
-        # Check if a lesson with the same order exists for the given course
-        course = self.initial_data.get("course")
-        if Lesson.objects.filter(order=value, course=course).exists():
-            raise serializers.ValidationError("This order exists.")
-        return value
+    def validate(self, attrs):
+        """
+        Validate lesson order to ensure uniqueness within the course.
+        """
+        course = attrs.get("course")
+        if Lesson.objects.filter(course=course, order=attrs["order"]).exists():
+            raise serializers.ValidationError(
+                "Lesson order must be unique within the course."
+            )
+        return attrs

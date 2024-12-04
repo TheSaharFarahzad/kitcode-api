@@ -1,23 +1,20 @@
-# 1. Standard library imports
+# Standard library imports
 from unittest.mock import patch
 
-# 2. Django imports
+# Django imports
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
 from django.core import mail
 from django.test import override_settings
+from allauth.account.models import EmailAddress
 
-# 3. Third-party imports
+# Third-party imports
 from rest_framework import status
 from rest_framework.test import APIClient
 import pytest
 
 
 User = get_user_model()
-
-# --- Fixtures ---
 
 
 @pytest.fixture
@@ -27,21 +24,10 @@ def api_client():
 
 
 @pytest.fixture
-def create_user(django_user_model):
-
-    def _create_user(username, email, password):
-        return django_user_model.objects.create_user(
-            username=username, email=email, password=password
-        )
-
-    return _create_user
-
-
-@pytest.fixture
 def create_user(db):
     """Fixture to create a new user."""
 
-    def _create_user(email, password, username="user", is_active=True):
+    def _create_user(email, password, username, is_active=True):
         User = get_user_model()
         user = User.objects.create_user(
             username=username, email=email, password=password
@@ -51,9 +37,6 @@ def create_user(db):
         return user
 
     return _create_user
-
-
-# --- Helper Functions ---
 
 
 def get_error_message(response_data):
@@ -69,27 +52,31 @@ def get_error_message(response_data):
     return ""
 
 
-# --- Test Registration ---
+def _mark_email_verified(user):
+    """Helper function to mark the user's email as verified."""
+    EmailAddress.objects.create(
+        user=user, email=user.email, verified=True, primary=True
+    )
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "register_data, expected_status, expected_error_field, expected_error_message",
     [
-        # # Test missing email
-        # (
-        #     {
-        #         "username": "missingemail",
-        #         "email": "",
-        #         "password1": "password123",
-        #         "password2": "password123",
-        #         "first_name": "",
-        #         "last_name": "",
-        #     },
-        #     status.HTTP_400_BAD_REQUEST,
-        #     ["email"],
-        #     "This field may not be blank.",
-        # ),
+        # Test missing email
+        (
+            {
+                "username": "missingemail",
+                "email": "",
+                "password1": "password123",
+                "password2": "password123",
+                "first_name": "",
+                "last_name": "",
+            },
+            status.HTTP_400_BAD_REQUEST,
+            ["email"],
+            "This field may not be blank.",
+        ),
         # Test missing password
         (
             {
@@ -131,20 +118,6 @@ def get_error_message(response_data):
             ["email"],
             "Enter a valid email address.",
         ),
-        # # Test email already registered
-        # (
-        #     {
-        #         "username": "existing",
-        #         "email": "existing_email@example.com",
-        #         "password1": "Sfrc.123",
-        #         "password2": "Sfrc.123",
-        #         "first_name": "Existing",
-        #         "last_name": "User",
-        #     },
-        #     status.HTTP_400_BAD_REQUEST,
-        #     ["email"],
-        #     "A user with this email already exists.",
-        # ),
         # Test username already registered
         (
             {
@@ -229,8 +202,79 @@ def test_register_user(
 ):
 
     # If the email is already registered, create the user before running the test
-    create_user("existing_email@example.com", "Sfrc.123", "existing_email")
     create_user("existing_username@example.com", "Sfrc.123", "existing_username")
+
+    # Run the registration process
+    register_url = reverse("rest_register")
+    response = api_client.post(register_url, data=register_data)
+
+    # Assert the status code matches the expected status
+    assert response.status_code == expected_status
+
+    # If an error is expected, check for the field and the error message
+    if expected_error_field:
+        # Check each expected error field
+        for field in expected_error_field:
+            assert field in response.data  # Verify the field exists in the response
+            if expected_error_message:
+                # Check if the expected message is in the field's error list
+                assert expected_error_message in response.data[field]
+
+
+@pytest.mark.django_db
+@override_settings(
+    ACCOUNT_EMAIL_VERIFICATION="mandatory",
+    ACCOUNT_EMAIL_REQUIRED=True,
+    ACCOUNT_EMAIL_CONFIRMATION_HMAC=False,
+)
+@pytest.mark.parametrize(
+    "register_data, expected_status, expected_error_field, expected_error_message",
+    [
+        # Test email already registered
+        (
+            {
+                "username": "existing",
+                "email": "existing_email@example.com",
+                "password1": "Sfrc.123",
+                "password2": "Sfrc.123",
+                "first_name": "Existing",
+                "last_name": "User",
+            },
+            status.HTTP_400_BAD_REQUEST,
+            ["email"],
+            "A user is already registered with this e-mail address.",
+        ),
+    ],
+)
+def test_register_user_if_email_already_registered(
+    api_client,
+    register_data,
+    expected_status,
+    expected_error_field,
+    expected_error_message,
+):
+    # Create the user before running the test
+    data = {
+        "username": "existing_email",
+        "email": "existing_email@example.com",
+        "password1": "Sfrc.123",
+        "password2": "Sfrc.123",
+    }
+    response = api_client.post(reverse("rest_register"), data=data)
+    assert response.status_code == status.HTTP_201_CREATED
+    # Fetch confirmation key
+    user = User.objects.get(email=data["email"])
+    email_confirmation = (
+        user.emailaddress_set.get(email=data["email"])
+        .emailconfirmation_set.order_by("-created")
+        .first()
+    )
+    key = email_confirmation.key
+    # Verify the email
+    verify_url = reverse("rest_verify_email")
+    response = api_client.post(verify_url, data={"key": key})
+    # Assert the expected status
+    assert response.status_code == status.HTTP_200_OK
 
     # Run the registration process
     register_url = reverse("rest_register")
@@ -255,7 +299,6 @@ def test_register_user(
     ACCOUNT_EMAIL_REQUIRED=True,
 )
 def test_user_registration_email_sent(api_client):
-    """Test that a confirmation email is sent upon successful registration."""
     user_count = User.objects.count()
     mail_count = len(mail.outbox)
 
@@ -269,9 +312,6 @@ def test_user_registration_email_sent(api_client):
     assert response.status_code == status.HTTP_201_CREATED
     assert User.objects.count() == user_count + 1
     assert len(mail.outbox) == mail_count + 1
-
-
-# --- Test Email Verification ---
 
 
 @pytest.mark.django_db
@@ -306,7 +346,6 @@ def test_email_verification(
     expected_status,
     expected_error,
 ):
-    """Test the email verification process."""
     data = {
         "username": "verifyuser",
         "email": "verifyuser@example.com",
@@ -340,9 +379,6 @@ def test_email_verification(
         assert expected_error in error_message
 
 
-# --- Test Resend Email Verification ---
-
-
 @pytest.mark.django_db
 @override_settings(
     ACCOUNT_EMAIL_VERIFICATION="mandatory",
@@ -357,16 +393,16 @@ def test_email_verification(
             status.HTTP_200_OK,
             None,
         ),
-        # (
-        #     "nonexistent@example.com",
-        #     status.HTTP_400_BAD_REQUEST,
-        #     "Email address not found.",
-        # ),
-        # (
-        #     "",
-        #     status.HTTP_400_BAD_REQUEST,
-        #     "This field may not be blank.",
-        # ),
+        (
+            "nonexistent@example.com",
+            status.HTTP_400_BAD_REQUEST,
+            "Email address not found.",
+        ),
+        (
+            "",
+            status.HTTP_400_BAD_REQUEST,
+            "This field may not be blank.",
+        ),
     ],
 )
 def test_resend_email_verification(
@@ -375,7 +411,6 @@ def test_resend_email_verification(
     expected_status,
     expected_error,
 ):
-    """Test resending the email verification link."""
     # Register a user
     data = {
         "username": "resenduser",
@@ -395,9 +430,6 @@ def test_resend_email_verification(
         assert len(mail.outbox) > 1
 
 
-# --- Miscellaneous Tests ---
-
-
 @pytest.mark.django_db
 @override_settings(
     ACCOUNT_EMAIL_VERIFICATION="mandatory",
@@ -405,7 +437,6 @@ def test_resend_email_verification(
     ACCOUNT_EMAIL_CONFIRMATION_HMAC=False,
 )
 def test_registration_user_creation(api_client):
-    """Test that user creation works properly."""
     user_count = User.objects.count()
 
     data = {
@@ -423,16 +454,16 @@ def test_registration_user_creation(api_client):
 @pytest.mark.parametrize(
     "login_data, expected_status, expected_error_key, expected_error_msg",
     [
-        # # Valid login without username
-        # (
-        #     {
-        #         "email": "newuser@example.com",
-        #         "password": "Sfrc.123",
-        #     },
-        #     status.HTTP_200_OK,
-        #     None,
-        #     None,
-        # ),
+        # Valid login without username
+        (
+            {
+                "email": "newuser@example.com",
+                "password": "Sfrc.123",
+            },
+            status.HTTP_200_OK,
+            None,
+            None,
+        ),
         # Valid login with username
         (
             {
@@ -454,16 +485,16 @@ def test_registration_user_creation(api_client):
             "non_field_errors",
             "Unable to log in with provided credentials.",
         ),
-        # # Invalid email
-        # (
-        #     {
-        #         "email": "invalid@example.com",
-        #         "password": "password123",
-        #     },
-        #     status.HTTP_400_BAD_REQUEST,
-        #     "non_field_errors",
-        #     "Unable to log in with provided credentials.",
-        # ),
+        # Invalid email
+        (
+            {
+                "email": "invalid@example.com",
+                "password": "password123",
+            },
+            status.HTTP_400_BAD_REQUEST,
+            "non_field_errors",
+            "Unable to log in with provided credentials.",
+        ),
         # Invalid email format
         (
             {
@@ -495,7 +526,12 @@ def test_login(
     expected_error_msg,
 ):
     # Arrange: Create a user
-    create_user(username="newuser", email="newuser@example.com", password="Sfrc.123")
+    user = create_user(
+        username="newuser", email="newuser@example.com", password="Sfrc.123"
+    )
+
+    # Mark the user's email as verified to avoid email verification issues
+    _mark_email_verified(user)
 
     # Act: Attempt login
     url = reverse("rest_login")
@@ -506,12 +542,10 @@ def test_login(
 
     if expected_status == status.HTTP_200_OK:
         assert "key" in response.data
-        # assert "access" in response.data
-        # assert "refresh" in response.data
-        # assert "user" in response.data
-        # user_data = response.data["user"]
-        # assert user_data["email"] == "newuser@example.com"
-        # assert user_data["username"] == "newuser"
+        assert "user" in response.data
+        user_data = response.data["user"]
+        assert user_data["email"] == "newuser@example.com"
+        assert user_data["username"] == "newuser"
 
     elif expected_status == status.HTTP_400_BAD_REQUEST:
         assert expected_error_key in response.data
@@ -656,72 +690,73 @@ def test_logout(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "old_password, new_password1, new_password2, expected_status, expected_detail",
+    "is_authenticated, new_password1, new_password2, expected_status, expected_detail",
     [
         (
-            "Sher.654",
+            True,
             "new_person",
             "new_person",
             status.HTTP_200_OK,
             "New password has been saved.",
         ),
         (
-            "Sher.654",
+            True,
             "new_person1",
             "new_person2",
             status.HTTP_400_BAD_REQUEST,
             "The two password fields didn’t match.",
         ),
-        # (
-        #     "wrong_password",
-        #     "new_person",
-        #     "new_person",
-        #     status.HTTP_400_BAD_REQUEST,
-        #     "Your old password was entered incorrectly.",
-        # ),
         (
-            "Sher.654",
+            True,
             "",
             "",
             status.HTTP_400_BAD_REQUEST,
             "This field may not be blank.",
         ),
         (
-            "Sher.654",
+            True,
             "short",
             "short",
             status.HTTP_400_BAD_REQUEST,
             "This password is too short. It must contain at least 8 characters.",
+        ),
+        (
+            True,
+            "password123",
+            "password123",
+            status.HTTP_400_BAD_REQUEST,
+            "This password is too common.",
+        ),
+        (
+            False,
+            "new_password",
+            "new_password",
+            status.HTTP_401_UNAUTHORIZED,
+            "Authentication credentials were not provided.",
         ),
     ],
 )
 def test_change_password(
     api_client,
     create_user,
-    old_password,
+    is_authenticated,
     new_password1,
     new_password2,
     expected_status,
     expected_detail,
 ):
-    """
-    Test password change behavior under different scenarios:
-    - Valid and invalid old passwords (not implemented yet)
-    - Matching and non-matching new passwords
-    - Valid and invalid new passwords (e.g., too short)
-    """
     # Step 1: Create a user
     user = create_user(
         username="testuser", email="test@example.com", password="Sher.654"
     )
 
-    # Step 2: Authenticate using force_authenticate
-    api_client.force_authenticate(user=user)
+    # Step 2: Authenticate if required
+    if is_authenticated:
+        api_client.force_authenticate(user=user)
 
     # Step 3: Attempt to change the password
     change_password_url = reverse("rest_password_change")
     password_change_payload = {
-        "old_password": old_password,
         "new_password1": new_password1,
         "new_password2": new_password2,
     }
@@ -737,9 +772,6 @@ def test_change_password(
 
 @pytest.mark.django_db
 def test_change_password_unauthenticated(api_client):
-    """
-    Test that an unauthenticated user cannot change the password.
-    """
     # Update the reverse name to match your application's configuration
     url = reverse("rest_password_change")
     data = {
@@ -759,42 +791,52 @@ def test_change_password_unauthenticated(api_client):
 @pytest.mark.django_db
 @patch("django.core.mail.EmailMessage.send")
 @pytest.mark.parametrize(
-    "email, exists, is_active, expected_status, mock_email_called",
+    "username, email, reset_email, exists, is_active, expected_status, mock_email_called",
     [
         # Valid email, user exists, and is active - email should be sent.
         (
-            "test@example.com",
+            "valid-email",
+            "valid-email@example.com",
+            "valid-email@example.com",
             True,
             True,
             200,
             True,
         ),
-        # # Valid email, but user does not exist - should return 400 and not send email.
-        # (
-        #     "nonexistent@example.com",
-        #     False,
-        #     True,
-        #     400,
-        #     False,
-        # ),
+        # Valid email, but user does not exist - should return 400 and not send email.
+        (
+            "",
+            "",
+            "nonexistent@example.com",
+            False,
+            False,
+            400,
+            False,
+        ),
         # Empty email - should return 400 and not send email.
         (
+            "valid",
+            "valid@example.com",
             "",
             False,
             True,
             400,
             False,
         ),
-        # # Valid email, user exists, but is inactive - should return 400 and not send email.
-        # (
-        #     "inactive@example.com",
-        #     True,
-        #     False,
-        #     400,
-        #     False,
-        # ),
+        # Valid email, user exists, but is inactive - should return 400 and not send email.
+        (
+            "inactive",
+            "inactive@example.com",
+            "inactive@example.com",
+            True,
+            False,
+            400,
+            False,
+        ),
         # Invalid email format - should return 400 and not send email.
         (
+            "invalid-email",
+            "invalid-email@example.com",
             "invalid-email",
             False,
             True,
@@ -807,22 +849,26 @@ def test_password_reset(
     mock_email_send,
     api_client,
     create_user,
+    username,
     email,
+    reset_email,
     exists,
     is_active,
     expected_status,
     mock_email_called,
 ):
-    """
-    Test the password reset endpoint with various email inputs and user states.
-    """
     # If the user should exist, create a user with the specified email and active state.
     if exists:
-        create_user(email=email, password="password123", is_active=is_active)
+        create_user(
+            username=username,
+            email=email,
+            password="password123",
+            is_active=is_active,
+        )
 
     # Make a POST request to the password reset endpoint with the provided email.
     url = reverse("rest_password_reset")
-    response = api_client.post(url, {"email": email})
+    response = api_client.post(url, {"email": reset_email})
 
     # Assert the response status matches the expected status.
     assert response.status_code == expected_status
@@ -917,7 +963,9 @@ def test_password_reset_confirm(
     expected_detail,
 ):
     # Step 1: Create a user
-    user = create_user(email="normal_user@test.com", password="oldpassword123")
+    user = create_user(
+        username="normal_user", email="normal_user@test.com", password="oldpassword123"
+    )
 
     # Step 2: Request password reset email
     reset_url = reverse("rest_password_reset")
@@ -952,3 +1000,133 @@ def test_password_reset_confirm(
         assert response.data == expected_detail
     else:
         assert response.data.get("detail") == expected_detail
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "is_authenticated, expected_status, expected_response_keys",
+    [
+        # Authenticated user
+        (
+            True,
+            status.HTTP_200_OK,
+            {"username", "email", "first_name", "last_name"},
+        ),
+        # Unauthenticated user
+        (
+            False,
+            status.HTTP_401_UNAUTHORIZED,
+            set(),
+        ),
+    ],
+)
+def test_get_user(
+    api_client, create_user, is_authenticated, expected_status, expected_response_keys
+):
+    """
+    Test the User detail endpoint with authenticated and unauthenticated requests.
+    """
+    # Arrange
+    user = create_user(email="user@test.com", username="testuser", password="testpass")
+    if is_authenticated:
+        api_client.force_authenticate(user=user)
+
+    url = reverse("rest_user_details")
+
+    # Act
+    response = api_client.get(url)
+
+    # Assert
+    assert response.status_code == expected_status
+
+    if expected_status == status.HTTP_200_OK:
+        # Successful retrieval
+        assert set(response.data.keys()) >= expected_response_keys
+        assert response.data["username"] == user.username
+        assert response.data["email"] == user.email
+    elif expected_status == status.HTTP_401_UNAUTHORIZED:
+        # Unauthenticated access
+        assert "detail" in response.data
+        assert (
+            response.data["detail"] == "Authentication credentials were not provided."
+        )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "is_authenticated, request_data, expected_status, expected_response_keys",
+    [
+        # Authenticated user, valid data
+        (
+            True,
+            {
+                "username": "updateduser",
+                "first_name": "Updated",
+                "last_name": "User",
+            },
+            status.HTTP_200_OK,
+            {"username", "first_name", "last_name"},
+        ),
+        # Unauthenticated user
+        (
+            False,
+            {
+                "username": "updateduser",
+                "first_name": "Updated",
+                "last_name": "User",
+            },
+            status.HTTP_401_UNAUTHORIZED,
+            set(),
+        ),
+        # Authenticated user, invalid data (empty username)
+        (
+            True,
+            {"username": ""},
+            status.HTTP_400_BAD_REQUEST,
+            {"username"},
+        ),
+        # Authenticated user, no data
+        (
+            True,
+            {},
+            status.HTTP_400_BAD_REQUEST,
+            {"username"},
+        ),
+    ],
+)
+def test_update_user(
+    api_client,
+    create_user,
+    is_authenticated,
+    request_data,
+    expected_status,
+    expected_response_keys,
+):
+    # Arrange
+    user = create_user(email="user@test.com", username="testuser", password="testpass")
+    if is_authenticated:
+        api_client.force_authenticate(user=user)
+
+    url = reverse("rest_user_details")
+
+    # Act
+    response = api_client.put(url, data=request_data)
+
+    # Assert
+    assert response.status_code == expected_status
+
+    if expected_status == status.HTTP_200_OK:
+        # Successful update
+        assert set(response.data.keys()) >= expected_response_keys
+        for key, value in request_data.items():
+            if key in expected_response_keys:
+                assert response.data[key] == value
+    elif expected_status == status.HTTP_400_BAD_REQUEST:
+        # Invalid request data
+        assert set(response.data.keys()) & expected_response_keys
+    elif expected_status == status.HTTP_401_UNAUTHORIZED:
+        # Unauthenticated access
+        assert "detail" in response.data
+        assert (
+            response.data["detail"] == "Authentication credentials were not provided."
+        )
