@@ -690,43 +690,56 @@ def test_logout(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "new_password1, new_password2, expected_status, expected_detail",
+    "is_authenticated, new_password1, new_password2, expected_status, expected_detail",
     [
         (
+            True,
             "new_person",
             "new_person",
             status.HTTP_200_OK,
             "New password has been saved.",
         ),
         (
+            True,
             "new_person1",
             "new_person2",
             status.HTTP_400_BAD_REQUEST,
             "The two password fields didn’t match.",
         ),
         (
+            True,
             "",
             "",
             status.HTTP_400_BAD_REQUEST,
             "This field may not be blank.",
         ),
         (
+            True,
             "short",
             "short",
             status.HTTP_400_BAD_REQUEST,
             "This password is too short. It must contain at least 8 characters.",
         ),
         (
+            True,
             "password123",
             "password123",
             status.HTTP_400_BAD_REQUEST,
             "This password is too common.",
+        ),
+        (
+            False,
+            "new_password",
+            "new_password",
+            status.HTTP_401_UNAUTHORIZED,
+            "Authentication credentials were not provided.",
         ),
     ],
 )
 def test_change_password(
     api_client,
     create_user,
+    is_authenticated,
     new_password1,
     new_password2,
     expected_status,
@@ -737,8 +750,9 @@ def test_change_password(
         username="testuser", email="test@example.com", password="Sher.654"
     )
 
-    # Step 2: Authenticate using force_authenticate
-    api_client.force_authenticate(user=user)
+    # Step 2: Authenticate if required
+    if is_authenticated:
+        api_client.force_authenticate(user=user)
 
     # Step 3: Attempt to change the password
     change_password_url = reverse("rest_password_change")
@@ -986,3 +1000,133 @@ def test_password_reset_confirm(
         assert response.data == expected_detail
     else:
         assert response.data.get("detail") == expected_detail
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "is_authenticated, expected_status, expected_response_keys",
+    [
+        # Authenticated user
+        (
+            True,
+            status.HTTP_200_OK,
+            {"username", "email", "first_name", "last_name"},
+        ),
+        # Unauthenticated user
+        (
+            False,
+            status.HTTP_401_UNAUTHORIZED,
+            set(),
+        ),
+    ],
+)
+def test_get_user(
+    api_client, create_user, is_authenticated, expected_status, expected_response_keys
+):
+    """
+    Test the User detail endpoint with authenticated and unauthenticated requests.
+    """
+    # Arrange
+    user = create_user(email="user@test.com", username="testuser", password="testpass")
+    if is_authenticated:
+        api_client.force_authenticate(user=user)
+
+    url = reverse("rest_user_details")
+
+    # Act
+    response = api_client.get(url)
+
+    # Assert
+    assert response.status_code == expected_status
+
+    if expected_status == status.HTTP_200_OK:
+        # Successful retrieval
+        assert set(response.data.keys()) >= expected_response_keys
+        assert response.data["username"] == user.username
+        assert response.data["email"] == user.email
+    elif expected_status == status.HTTP_401_UNAUTHORIZED:
+        # Unauthenticated access
+        assert "detail" in response.data
+        assert (
+            response.data["detail"] == "Authentication credentials were not provided."
+        )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "is_authenticated, request_data, expected_status, expected_response_keys",
+    [
+        # Authenticated user, valid data
+        (
+            True,
+            {
+                "username": "updateduser",
+                "first_name": "Updated",
+                "last_name": "User",
+            },
+            status.HTTP_200_OK,
+            {"username", "first_name", "last_name"},
+        ),
+        # Unauthenticated user
+        (
+            False,
+            {
+                "username": "updateduser",
+                "first_name": "Updated",
+                "last_name": "User",
+            },
+            status.HTTP_401_UNAUTHORIZED,
+            set(),
+        ),
+        # Authenticated user, invalid data (empty username)
+        (
+            True,
+            {"username": ""},
+            status.HTTP_400_BAD_REQUEST,
+            {"username"},
+        ),
+        # Authenticated user, no data
+        (
+            True,
+            {},
+            status.HTTP_400_BAD_REQUEST,
+            {"username"},
+        ),
+    ],
+)
+def test_update_user(
+    api_client,
+    create_user,
+    is_authenticated,
+    request_data,
+    expected_status,
+    expected_response_keys,
+):
+    # Arrange
+    user = create_user(email="user@test.com", username="testuser", password="testpass")
+    if is_authenticated:
+        api_client.force_authenticate(user=user)
+
+    url = reverse("rest_user_details")
+
+    # Act
+    response = api_client.put(url, data=request_data)
+
+    # Assert
+    assert response.status_code == expected_status
+
+    if expected_status == status.HTTP_200_OK:
+        # Successful update
+        assert set(response.data.keys()) >= expected_response_keys
+        for key, value in request_data.items():
+            if key in expected_response_keys:
+                assert response.data[key] == value
+    elif expected_status == status.HTTP_400_BAD_REQUEST:
+        # Invalid request data
+        assert set(response.data.keys()) & expected_response_keys
+    elif expected_status == status.HTTP_401_UNAUTHORIZED:
+        # Unauthenticated access
+        assert "detail" in response.data
+        assert (
+            response.data["detail"] == "Authentication credentials were not provided."
+        )
