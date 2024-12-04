@@ -542,12 +542,10 @@ def test_login(
 
     if expected_status == status.HTTP_200_OK:
         assert "key" in response.data
-        # assert "access" in response.data
-        # assert "refresh" in response.data
-        # assert "user" in response.data
-        # user_data = response.data["user"]
-        # assert user_data["email"] == "newuser@example.com"
-        # assert user_data["username"] == "newuser"
+        assert "user" in response.data
+        user_data = response.data["user"]
+        assert user_data["email"] == "newuser@example.com"
+        assert user_data["username"] == "newuser"
 
     elif expected_status == status.HTTP_400_BAD_REQUEST:
         assert expected_error_key in response.data

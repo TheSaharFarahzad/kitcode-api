@@ -25,7 +25,7 @@ from drf_spectacular.views import (
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.views.generic import TemplateView
-from users.views import CustomResendEmailVerificationView
+from users.views import CustomResendEmailVerificationView, CustomLoginView
 from .views import APIVersionView
 
 urlpatterns = [
@@ -44,6 +44,7 @@ urlpatterns = [
     ),
     path("api/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("dj-rest-auth/login/", CustomLoginView.as_view(), name="rest_login"),
     path("dj-rest-auth/", include("dj_rest_auth.urls")),
     path(
         "dj-rest-auth/registration/resend-email/",
