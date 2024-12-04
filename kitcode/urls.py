@@ -58,6 +58,7 @@ urlpatterns = [
         name="password_reset_confirm",
     ),
     path("", include("courses.urls")),
+    path("", include("users.urls")),
     # path("api/v1/", include("your_app.urls.v1")),
     # path("api/v2/", include("your_app.urls.v2")),
 ]

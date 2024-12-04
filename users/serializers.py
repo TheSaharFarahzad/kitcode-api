@@ -50,3 +50,18 @@ class CustomResendEmailVerificationSerializer(serializers.Serializer):
         if not EmailAddress.objects.filter(email=value).exists():
             raise ValidationError("Email address not found.")
         return value
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "bio",
+            "picture",
+        ]
+        read_only_fields = ["id", "email"]
