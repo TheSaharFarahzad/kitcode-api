@@ -23,7 +23,7 @@ jobs:
           POSTGRES_USER: ${{ secrets.DATABASE_USER }}
           POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
         ports:
-          - ${{ secrets.DATABASE_PORT_HOST }}: ${{ secrets.DATABASE_PORT }}
+          - ${{ secrets.DATABASE_PORT_HOST }}:${{ secrets.DATABASE_PORT }}
         options: >-
           --health-cmd "pg_isready -U ${{ secrets.DATABASE_USER }} -d ${{ secrets.DATABASE_NAME }}"
           --health-interval 10s
@@ -50,7 +50,7 @@ jobs:
           echo "ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}" >> .env
           echo "DATABASE_HOST=${{ secrets.DATABASE_HOST }}" >> .env
           echo "DATABASE_NAME=${{ secrets.DATABASE_NAME }}" >> .env
-          echo "DATABASE_PORT==${{ secrets.DATABASE_PORT }}" >> .env
+          echo "DATABASE_PORT=${{ secrets.DATABASE_PORT }}" >> .env
           echo "DATABASE_USER=${{ secrets.DATABASE_USER }}" >> .env
           echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
 
