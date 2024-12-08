@@ -24,35 +24,44 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
         ports:
           - "${{ secrets.DATABASE_PORT_HOST }}:${{ secrets.DATABASE_PORT }}"
-        options: --health-cmd='pg_isready -U ${{ secrets.DATABASE_USER }} -d ${{ secrets.DATABASE_NAME }}' --health-interval=10s --health-timeout=5s --health-retries=5
+        options: >-
+          --health-cmd='pg_isready -U ${{ secrets.DATABASE_USER }} -d ${{ secrets.DATABASE_NAME }}'
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
+      # Checkout the repository
       - uses: actions/checkout@v4
 
+      # Set up Python environment
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
 
+      # Install dependencies from requirements file
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements/base.txt
 
+      # Set environment variables from GitHub Secrets
       - name: Set environment variables
         run: |
           echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
           echo "DEBUG=${{ secrets.DEBUG }}" >> .env
           echo "ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}" >> .env
-          echo "DATABASE_HOST=postgres" >> .env  # Set database host to service name
+          echo "DATABASE_HOST=postgres" >> .env
           echo "DATABASE_NAME=${{ secrets.DATABASE_NAME }}" >> .env
-          echo "DATABASE_PORT=5432" >> .env  # Use internal port for PostgreSQL (matching Docker Compose)
+          echo "DATABASE_PORT=5432" >> .env
           echo "DATABASE_USER=${{ secrets.DATABASE_USER }}" >> .env
           echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
 
+      # Run Django migrations and tests
       - name: Run Tests
         env:
           DJANGO_SETTINGS_MODULE: kitcode.settings.base
         run: |
-          python manage.py migrate
-          pytest
+          python manage.py migrate --noinput
+          pytest --maxfail=1 --disable-warnings -q
