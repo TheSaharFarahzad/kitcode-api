@@ -113,6 +113,9 @@ ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_USERNAME_REQUIRED = True
 UNIQUE_EMAIL = True
 
+SITE_URL = env("DJANGO_DOMAIN", default="http://localhost:8000")
+CUSTOM_ACCOUNT_CONFIRM_EMAIL_URL = "/dj-rest-auth/registration/verify-email/?token={0}"
+ACCOUNT_ADAPTER = "users.adapters.CustomAccountAdapter"
 
 EMAIL_BACKEND = env(
     "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
