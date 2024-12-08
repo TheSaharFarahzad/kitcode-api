@@ -17,13 +17,13 @@ jobs:
 
     services:
       postgres:
-        image: postgres:latest
+        image: postgres:16
         env:
           POSTGRES_DB: ${{ secrets.DATABASE_NAME }}
           POSTGRES_USER: ${{ secrets.DATABASE_USER }}
           POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
         ports:
-          - 5432:5432
+          - "${DATABASE_PORT_HOST}:${DATABASE_PORT}"
 
     steps:
       - uses: actions/checkout@v4
@@ -38,16 +38,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements/base.txt
 
-      - name: Set environment variables
+      - name: Set environment variables from .env file
         run: |
-          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
-          echo "DEBUG=${{ secrets.DEBUG }}" >> .env
-          echo "ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}" >> .env
-          echo "DATABASE_HOST=${{ secrets.DATABASE_HOST }}" >> .env
-          echo "DATABASE_NAME=${{ secrets.DATABASE_NAME }}" >> .env
-          echo "DATABASE_PORT=${{ secrets.DATABASE_PORT }}" >> .env
-          echo "DATABASE_USER=${{ secrets.DATABASE_USER }}" >> .env
-          echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
+          # Load environment variables from .env file
+          set -o allexport
+          source .env
+          set +o allexport
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          until pg_isready -h 127.0.0.1 -p 5432 -U ${{ secrets.DATABASE_USER }}; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
 
       - name: Run Tests
         env:
