@@ -23,7 +23,7 @@ jobs:
           POSTGRES_USER: ${{ secrets.DATABASE_USER }}
           POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
         ports:
-          - "${DATABASE_PORT_HOST}:${DATABASE_PORT}"
+          - "${{ secrets.DATABASE_PORT_HOST }}:${{ secrets.DATABASE_PORT }}"
         options: --health-cmd='pg_isready -U ${{ secrets.DATABASE_USER }} -d ${{ secrets.DATABASE_NAME }}' --health-interval=10s --health-timeout=5s --health-retries=5
 
     steps:
@@ -44,9 +44,9 @@ jobs:
           echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
           echo "DEBUG=${{ secrets.DEBUG }}" >> .env
           echo "ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}" >> .env
-          echo "DATABASE_HOST=${{ secrets.DATABASE_HOST }}" >> .env
+          echo "DATABASE_HOST=postgres" >> .env  # Set database host to service name
           echo "DATABASE_NAME=${{ secrets.DATABASE_NAME }}" >> .env
-          echo "DATABASE_PORT=${{ secrets.DATABASE_PORT }}" >> .env
+          echo "DATABASE_PORT=5432" >> .env  # Use internal port for PostgreSQL (matching Docker Compose)
           echo "DATABASE_USER=${{ secrets.DATABASE_USER }}" >> .env
           echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
 
