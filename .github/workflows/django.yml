@@ -8,6 +8,7 @@ on:
 
 jobs:
   build:
+
     runs-on: ubuntu-latest
     strategy:
       max-parallel: 4
@@ -18,13 +19,13 @@ jobs:
       db:
         image: postgres:16
         env:
-          POSTGRES_DB: ${DATABASE_NAME}
-          POSTGRES_USER: ${DATABASE_USER}
-          POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+          POSTGRES_DB: ${{ secrets.DATABASE_NAME }}
+          POSTGRES_USER: ${{ secrets.DATABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
         ports:
-          - 5432:5432
+          - ${{ secrets.DATABASE_PORT_HOST }}: ${{ secrets.DATABASE_PORT }}
         options: >-
-          --health-cmd "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME}"
+          --health-cmd "pg_isready -U ${{ secrets.DATABASE_USER }} -d ${{ secrets.DATABASE_NAME }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -42,11 +43,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements/base.txt
 
-      - name: Load Environment Variables
+      - name: Set environment variables
         run: |
-          cp .env.example .env
-        env:
-          DATABASE_HOST: db
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
+          echo "DEBUG=${{ secrets.DEBUG }}" >> .env
+          echo "ALLOWED_HOSTS=${{ secrets.ALLOWED_HOSTS }}" >> .env
+          echo "DATABASE_HOST=${{ secrets.DATABASE_HOST }}" >> .env
+          echo "DATABASE_NAME=${{ secrets.DATABASE_NAME }}" >> .env
+          echo "DATABASE_PORT==${{ secrets.DATABASE_PORT }}" >> .env
+          echo "DATABASE_USER=${{ secrets.DATABASE_USER }}" >> .env
+          echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
 
       - name: Run Tests
         env:
