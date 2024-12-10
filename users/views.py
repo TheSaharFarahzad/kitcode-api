@@ -1,10 +1,8 @@
 from dj_rest_auth.registration.views import ResendEmailVerificationView
 from dj_rest_auth.views import LoginView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from .serializers import CustomResendEmailVerificationSerializer, UserSerializer
+from .serializers import CustomResendEmailVerificationSerializer
 
 
 User = get_user_model()
@@ -38,12 +36,3 @@ class CustomLoginView(LoginView):
         response.data["user"] = user_data
 
         return response
-
-
-class UserDetailsView(RetrieveUpdateAPIView):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_object(self):
-        return self.request.user

@@ -52,7 +52,9 @@ class CustomResendEmailVerificationSerializer(serializers.Serializer):
         return value
 
 
-class UserSerializer(serializers.ModelSerializer):
+class CustomUserDetailsSerializer(serializers.ModelSerializer):
+    picture = serializers.ImageField(required=False)
+
     class Meta:
         model = User
         fields = [
