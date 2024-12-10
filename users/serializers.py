@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 from allauth.account.models import EmailAddress
 from dj_rest_auth.serializers import PasswordResetSerializer
@@ -54,6 +55,8 @@ class CustomResendEmailVerificationSerializer(serializers.Serializer):
 
 class CustomUserDetailsSerializer(serializers.ModelSerializer):
     picture = serializers.ImageField(required=False)
+    username = serializers.CharField(required=False, allow_blank=False)
+    email = serializers.EmailField(required=False, allow_blank=False)
 
     class Meta:
         model = User
@@ -66,4 +69,43 @@ class CustomUserDetailsSerializer(serializers.ModelSerializer):
             "bio",
             "picture",
         ]
-        read_only_fields = ["id", "email"]
+        read_only_fields = ["id"]
+
+    def validate_username(self, value):
+        """
+        Ensure the username is valid and unique, but not for the current user.
+        """
+        if not value:
+            raise serializers.ValidationError(_("This field may not be blank."))
+
+        user = self.context.get("request").user
+
+        # If username is being updated to the same as current, don't check for uniqueness
+        if value == user.username:
+            return value
+
+        # Check if the new username already exists in other users
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError(_("This username is already taken"))
+
+        return value
+
+    def validate_email(self, value):
+        """
+        Ensure the email is not empty and follows validation logic, but not for the current user.
+        """
+        if not value:  # Check if email is empty
+            raise serializers.ValidationError(_("This field may not be blank."))
+
+        # Get the current user from the context (assumes the view is passing it)
+        user = self.context.get("request").user
+
+        # If email is being updated to the same as current, don't check for uniqueness
+        if value == user.email:
+            return value
+
+        # Check if the new email already exists in other users
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError(_("This email is already registered"))
+
+        return value
