@@ -4,6 +4,9 @@ from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import get_user_model
 from allauth.account.models import EmailAddress
 from dj_rest_auth.serializers import PasswordResetSerializer
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.exceptions import ValidationError
+from PIL import Image
 
 User = get_user_model()
 
@@ -70,6 +73,25 @@ class CustomUserDetailsSerializer(serializers.ModelSerializer):
             "picture",
         ]
         read_only_fields = ["id"]
+
+    def validate_picture(self, value):
+        """
+        Ensure that the uploaded file is a valid image and matches allowed formats.
+        """
+        print(f"Validating picture: {value}")
+        if value:
+            if value.content_type not in ["image/jpeg", "image/png", "image/jpg"]:
+                raise serializers.ValidationError(
+                    "Upload a valid image. The file you uploaded was either not an image or a corrupted image."
+                )
+            try:
+                # Validate the image content
+                Image.open(value).verify()
+            except (DjangoValidationError, IOError):
+                raise serializers.ValidationError(
+                    "Upload a valid image. The file you uploaded was either not an image or a corrupted image."
+                )
+        return value
 
     def validate_username(self, value):
         """
