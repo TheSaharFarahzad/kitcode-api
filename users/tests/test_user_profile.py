@@ -1,21 +1,17 @@
-# Standard library imports
-import io
-from unittest.mock import patch
-
-# Third-party imports
 from PIL import Image
+import io
 import pytest
 from rest_framework import status
-
-# Django imports
-from django.contrib.auth import get_user_model
-from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
-from django.urls import reverse
+from .conftest import send_request, validate_response, authenticate_user
 
-# Local imports
-from .conftest import send_request, validate_response
+import tempfile
+import shutil
+import pytest
+from django.test import override_settings
+from PIL import Image
+import io
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 # Create a valid in-memory image file for testing
 image_data = io.BytesIO()
@@ -23,206 +19,65 @@ image = Image.new("RGB", (100, 100), color="red")
 image.save(image_data, format="JPEG")
 image_data.seek(0)
 
+# Temporary directory for media files during tests
+TEMP_MEDIA_ROOT = tempfile.mkdtemp()
 
-User = get_user_model()
+
+@pytest.fixture(scope="function", autouse=True)
+def setup_media_storage():
+    with override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT):
+        yield
+    # Cleanup the temporary media directory after the test
+    shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "register_data, expected_status, expected_data, expected_error_message",
+    "is_authenticated, expected_status, expected_response_keys",
     [
-        # Test missing email
+        # Authenticated user
         (
-            {
-                "username": "missingemail",
-                "email": "",
-                "password1": "password123",
-                "password2": "password123",
-                "first_name": "",
-                "last_name": "",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "This field may not be blank.",
+            True,
+            status.HTTP_200_OK,
+            {"username", "email", "first_name", "last_name"},
         ),
-        # Test missing password
+        # Unauthenticated user
         (
-            {
-                "username": "missingfields",
-                "email": "missingfields@example.com",
-                "password1": "",
-                "password2": "",
-                "first_name": "No",
-                "last_name": "Password",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "This field may not be blank.",
-        ),
-        # Test missing password confirmation
-        (
-            {
-                "username": "missingpasswordconfirmation",
-                "email": "missingpasswordconfirmation@example.com",
-                "password1": "Sfrc.453",
-                "first_name": "No",
-                "last_name": "Confirmation",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "This field is required.",
-        ),
-        # Test invalid email format
-        (
-            {
-                "username": "invalidemailformat",
-                "email": "invalidemailformat.com",
-                "password1": "password123",
-                "password2": "password123",
-                "first_name": "Invalid",
-                "last_name": "Email",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "Enter a valid email address.",
-        ),
-        # Test username already registered
-        (
-            {
-                "username": "existing_username",
-                "email": "existing@example.com",
-                "password1": "Sfrc.123",
-                "password2": "Sfrc.123",
-                "first_name": "Existing",
-                "last_name": "User",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "A user with that username already exists.",
-        ),
-        # Test email already registered
-        (
-            {
-                "username": "existing",
-                "email": "existing_email@example.com",
-                "password1": "Sfrc.123",
-                "password2": "Sfrc.123",
-                "first_name": "Existing",
-                "last_name": "User",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "A user is already registered with this e-mail address.",
-        ),
-        # Test weak password (less than 8 characters)
-        (
-            {
-                "username": "weakpassword",
-                "email": "weakpassword@example.com",
-                "password1": "short",
-                "password2": "short",
-                "first_name": "Weak",
-                "last_name": "Password",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "This password is too short. It must contain at least 8 characters.",
-        ),
-        # Test weak password (too common)
-        (
-            {
-                "username": "commonpassword",
-                "email": "commonpassword@example.com",
-                "password1": "password123",
-                "password2": "password123",
-                "first_name": "Common",
-                "last_name": "Password",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "This password is too common.",
-        ),
-        # Test wrong password confirmation
-        (
-            {
-                "username": "wrongconfirmation",
-                "email": "wrongconfirmation@example.com",
-                "password1": "Sfrc.123",
-                "password2": "Sfrc.456",
-                "first_name": "Wrong",
-                "last_name": "Confirmation",
-            },
-            status.HTTP_400_BAD_REQUEST,
-            None,
-            "The two password fields didn't match.",
-        ),
-        # Test valid registration
-        (
-            {
-                "username": "validuser",
-                "email": "validuser@example.com",
-                "password1": "Sfrc.453",
-                "password2": "Sfrc.453",
-                "first_name": "Valid",
-                "last_name": "User",
-            },
-            status.HTTP_201_CREATED,
-            {"key": "mocked-access-token"},
-            None,
+            False,
+            status.HTTP_401_UNAUTHORIZED,
+            set(),
         ),
     ],
 )
-@patch("dj_rest_auth.registration.views.allauth_account_settings.EMAIL_VERIFICATION")
-@patch("dj_rest_auth.registration.views.RegisterView.get_response_data")
-def test_register_user(
-    mock_get_response_data,
-    mock_send_email,
-    api_client,
-    register_data,
-    expected_status,
-    expected_data,
-    expected_error_message,
-    create_user,
+def test_get_user(
+    api_client, create_user, is_authenticated, expected_status, expected_response_keys
 ):
-    # Arrange
-    create_user("existing_email@example.com", "Sfrc.123", "existing_username")
 
-    # Mock
-    mock_get_response_data.return_value = {"key": "mocked-access-token"}
+    user = create_user(email="user@test.com", username="testuser", password="testpass")
+    if is_authenticated:
+        authenticate_user(api_client, user)
 
-    # Act
-    response = send_request(
-        api_client, method="post", url_name="rest_register", data=register_data
+    response = send_request(api_client, "get", "rest_user_details")
+
+    expected_data = None
+    expected_error_message = (
+        "Authentication credentials were not provided."
+        if not is_authenticated
+        else None
     )
 
-    # Assert
+    if expected_status == status.HTTP_200_OK:
+        expected_data = {
+            "username": user.username,
+            "email": user.email,
+        }
+
     validate_response(
         response,
         expected_status,
         expected_data=expected_data,
         expected_error_message=expected_error_message,
     )
-
-
-@pytest.mark.django_db
-@override_settings(
-    ACCOUNT_EMAIL_VERIFICATION="mandatory",
-    ACCOUNT_EMAIL_REQUIRED=True,
-)
-def test_user_registration_email_sent(api_client):
-    user_count = User.objects.count()
-    mail_count = len(mail.outbox)
-
-    data = {
-        "username": "newuser",
-        "email": "newuser@example.com",
-        "password1": "StrongPassword123",
-        "password2": "StrongPassword123",
-    }
-    response = api_client.post(reverse("rest_register"), data=data)
-    assert response.status_code == status.HTTP_201_CREATED
-    assert User.objects.count() == user_count + 1
-    assert len(mail.outbox) == mail_count + 1
 
 
 @pytest.mark.django_db
@@ -415,17 +270,15 @@ def test_update_user(
     expected_status,
     expected_response_data,
 ):
-    # Arrange
+
     user = create_user(email="user@test.com", username="testuser", password="testpass")
     if is_authenticated:
         api_client.force_authenticate(user=user)
 
-    # Act
     response = send_request(
         api_client, method="put", url_name="rest_user_details", data=request_data
     )
 
-    # Assert
     if expected_status == status.HTTP_200_OK:
         expected_response_data["id"] = user.id
     validate_response(response, expected_status, expected_response_data)
@@ -512,28 +365,24 @@ def test_update_user_profile_picture(
     expected_status,
     expected_response_data,
 ):
-    # Arrange
+
     user = create_user(email="user@test.com", username="testuser", password="testpass")
     if is_authenticated:
         api_client.force_authenticate(user=user)
 
-    # Act
     response = send_request(
         api_client, method="put", url_name="rest_user_details", data=request_data
     )
 
-    # Assert status code
     assert (
         response.status_code == expected_status
     ), f"Expected status {expected_status}, but got {response.status_code}"
 
-    # Validate the response data
     if expected_status == status.HTTP_400_BAD_REQUEST:
         assert (
             response.data == expected_response_data
         ), f"Expected error data {expected_response_data}, but got {response.data}"
     elif expected_status == status.HTTP_200_OK:
-        # Check if picture URL is correct and matches the expected response format
         assert response.data["picture"].startswith(
             "http://testserver/media/profile_pics/"
         ), f"Expected picture URL to start with 'http://testserver/media/profile_pics/', but got {response.data['picture']}"

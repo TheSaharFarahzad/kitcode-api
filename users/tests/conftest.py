@@ -1,20 +1,18 @@
 import pytest
 from rest_framework.test import APIClient
-from rest_framework import status
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from allauth.account.models import EmailAddress, EmailConfirmation
+from django.utils.timezone import now
 
 
 @pytest.fixture
 def api_client():
-    """Provides an instance of APIClient."""
     return APIClient()
 
 
 @pytest.fixture
 def create_user(db):
-    """Fixture to create a new user and optionally verify email."""
 
     def _create_user(email, password, username, is_active=True, is_verified=True):
         User = get_user_model()
@@ -24,14 +22,14 @@ def create_user(db):
         user.is_active = is_active
         user.save()
 
-        # Create the email address object
         email_address = EmailAddress.objects.create(
             user=user, email=email, verified=is_verified, primary=True
         )
 
-        # If the user is verified, create a mock EmailConfirmation object
         email_confirmation = EmailConfirmation.objects.create(
-            email_address=email_address, key="dummy-key"
+            email_address=email_address,
+            key="dummy-key",
+            sent=now(),
         )
         email_confirmation.save()
 
@@ -88,11 +86,29 @@ def validate_response(
     Raises:
         AssertionError if validation fails.
     """
-    check_status_code(response, expected_status)
-    if expected_status in (status.HTTP_200_OK, status.HTTP_201_CREATED):
-        check_successful_response(response, expected_data)
-    elif expected_error_message:
-        check_error_message(response, expected_error_message)
+
+    assert (
+        response.status_code == expected_status
+    ), f"Expected {expected_status}, got {response.status_code}"
+
+    if expected_data:
+        for key, value in expected_data.items():
+            assert (
+                response.data.get(key) == value
+            ), f"Expected {key}: {value}, got {response.data.get(key)}"
+
+    if expected_error_message:
+        if isinstance(expected_error_message, str):
+            error_values = response.data.values()
+            found = any(expected_error_message in str(val) for val in error_values)
+            assert (
+                found
+            ), f"Expected error message '{expected_error_message}' not found in {response.data}"
+        elif isinstance(expected_error_message, dict):
+            for key, value in expected_error_message.items():
+                assert (
+                    response.data.get(key) == value
+                ), f"Expected {key}: {value}, got {response.data.get(key)}"
 
 
 def check_status_code(response, expected_status):
@@ -158,9 +174,12 @@ def extract_error_message(response_data):
     Returns:
         A string containing the error message, if present.
     """
-    if "detail" in response_data:
-        return str(response_data["detail"])
-    for field, errors in response_data.items():
-        if isinstance(errors, list) and errors:
-            return str(errors[0])
-    return ""
+    if not response_data:
+        return ""
+    if isinstance(response_data, dict):
+        # Handle common Django Rest Framework error response formats
+        if "detail" in response_data:
+            return response_data["detail"]
+        if "non_field_errors" in response_data:
+            return response_data["non_field_errors"][0]
+    return str(response_data)
