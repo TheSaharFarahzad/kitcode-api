@@ -15,6 +15,8 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 from django.urls import re_path
@@ -58,7 +60,9 @@ urlpatterns = [
         name="password_reset_confirm",
     ),
     path("", include("courses.urls")),
-    path("", include("users.urls")),
     # path("api/v1/", include("your_app.urls.v1")),
     # path("api/v2/", include("your_app.urls.v2")),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
