@@ -28,11 +28,9 @@ from drf_spectacular.views import (
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.views.generic import TemplateView
 from users.views import CustomResendEmailVerificationView, CustomLoginView
-from .views import APIVersionView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/version/", APIVersionView.as_view(), name="api_version"),
     path("api/schema/", SpectacularJSONAPIView.as_view(), name="schema"),
     path(
         "api/schema/swagger-ui/",
@@ -60,8 +58,6 @@ urlpatterns = [
         name="password_reset_confirm",
     ),
     path("", include("courses.urls")),
-    # path("api/v1/", include("your_app.urls.v1")),
-    # path("api/v2/", include("your_app.urls.v2")),
 ]
 
 if settings.DEBUG:
